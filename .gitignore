@@ -1,0 +1,22 @@
+# Binaries and build artifacts
+/secret-santa
+/bin/
+/dist/
+/web/dist/
+/web/node_modules/
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# OS / Editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+coverage.out

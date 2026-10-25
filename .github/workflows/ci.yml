@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend (Lint, Typecheck, Vitest & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (vue-tsc)
+        run: npm run typecheck
+
+      - name: Run unit tests (Vitest)
+        run: npm test
+
+      - name: Build production SPA bundle
+        run: npm run build
+
+      - name: Upload built frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+  backend:
+    name: Backend (Go Vet, Unit & Integration Tests, Single Binary Build)
+    runs-on: ubuntu-latest
+    needs: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download built frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Run Go Tests (Race detector enabled)
+        run: go test -race -v ./...
+
+      - name: Build Pure-Go Single Binary (CGO_ENABLED=0)
+        run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o secret-santa ./cmd/server
+
+  docker:
+    name: Docker Build & Smoke Check
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build multi-stage Docker image
+        run: docker build -t secret-santa:ci .
+
+      - name: Smoke test container healthcheck
+        run: |
+          docker run -d --name santa-smoke \
+            -p 8080:8080 \
+            -e APP_ENV=development \
+            -e APP_BASE_URL=http://localhost:8080 \
+            secret-santa:ci
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8080/api/health; then
+              echo "Container healthy"
+              docker rm -f santa-smoke
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs santa-smoke
+          docker rm -f santa-smoke
+          exit 1
