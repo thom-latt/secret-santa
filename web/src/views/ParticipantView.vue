@@ -157,7 +157,7 @@ async function handleDeleteItem(itemId: string) {
             <h3 class="text-base font-bold text-slate-900 mb-2">
               {{ t('participant.target_wishlist_title', { name: store.data.target.first_name }) }}
             </h3>
-            <p v-if="store.data.target.wishlist.length === 0" class="text-sm text-slate-500 italic">
+            <p v-if="store.data.target.wishlist.length === 0" data-testid="target-wishlist-empty" class="text-sm text-slate-500 italic">
               {{ t('participant.target_wishlist_empty') }}
             </p>
             <ul v-else data-testid="target-wishlist" class="space-y-2">
@@ -187,36 +187,58 @@ async function handleDeleteItem(itemId: string) {
       <section class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200 space-y-4">
         <div>
           <h2 class="text-xl font-bold text-slate-900">{{ t('participant.own_wishlist_title') }}</h2>
-          <p class="text-xs text-slate-500 mt-1">{{ t('participant.own_wishlist_reassurance') }}</p>
+          <p data-testid="own-wishlist-reassurance" class="text-xs text-slate-500 mt-1">{{ t('participant.own_wishlist_reassurance') }}</p>
         </div>
 
         <form data-testid="add-wishlist-form" class="space-y-3" @submit.prevent="handleAddWishlist">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              v-model="newTitle"
-              type="text"
-              required
-              maxlength="200"
-              :placeholder="t('participant.item_title')"
-              class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-            <input
-              v-model="newUrl"
-              type="text"
-              :placeholder="t('participant.item_url')"
-              class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
+            <div>
+              <label for="new-wishlist-title" class="block text-xs font-medium text-slate-700 mb-1">
+                {{ t('participant.item_title') }}
+              </label>
+              <input
+                id="new-wishlist-title"
+                v-model="newTitle"
+                data-testid="new-wishlist-title"
+                type="text"
+                required
+                maxlength="200"
+                :placeholder="t('participant.item_title')"
+                class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label for="new-wishlist-url" class="block text-xs font-medium text-slate-700 mb-1">
+                {{ t('participant.item_url') }}
+              </label>
+              <input
+                id="new-wishlist-url"
+                v-model="newUrl"
+                data-testid="new-wishlist-url"
+                type="text"
+                :placeholder="t('participant.item_url')"
+                class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
           </div>
-          <div class="flex flex-col sm:flex-row gap-3">
-            <input
-              v-model="newNote"
-              type="text"
-              maxlength="1000"
-              :placeholder="t('participant.item_note')"
-              class="flex-1 min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
+          <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div class="flex-1">
+              <label for="new-wishlist-note" class="block text-xs font-medium text-slate-700 mb-1">
+                {{ t('participant.item_note') }}
+              </label>
+              <input
+                id="new-wishlist-note"
+                v-model="newNote"
+                data-testid="new-wishlist-note"
+                type="text"
+                maxlength="1000"
+                :placeholder="t('participant.item_note')"
+                class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
             <button
               type="submit"
+              data-testid="add-wishlist-btn"
               class="min-h-[44px] rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 cursor-pointer"
             >
               {{ t('participant.add_item_btn') }}
@@ -224,7 +246,7 @@ async function handleDeleteItem(itemId: string) {
           </div>
         </form>
 
-        <p v-if="store.data.own_wishlist.length === 0" class="text-sm text-slate-500 italic">
+        <p v-if="store.data.own_wishlist.length === 0" data-testid="own-wishlist-empty" class="text-sm text-slate-500 italic">
           {{ t('participant.own_wishlist_empty') }}
         </p>
 
@@ -237,22 +259,29 @@ async function handleDeleteItem(itemId: string) {
             <div v-if="editingItemId === item.id" class="space-y-2">
               <input
                 v-model="editItemTitle"
+                data-testid="edit-wishlist-title"
                 type="text"
+                required
+                maxlength="200"
                 class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <input
                 v-model="editItemUrl"
+                data-testid="edit-wishlist-url"
                 type="text"
                 class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <input
                 v-model="editItemNote"
+                data-testid="edit-wishlist-note"
                 type="text"
+                maxlength="1000"
                 class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <div class="flex gap-2">
                 <button
                   type="button"
+                  data-testid="save-wishlist-btn"
                   class="min-h-[44px] rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white cursor-pointer"
                   @click="saveEditItem(item.id)"
                 >
@@ -260,6 +289,7 @@ async function handleDeleteItem(itemId: string) {
                 </button>
                 <button
                   type="button"
+                  data-testid="cancel-wishlist-btn"
                   class="min-h-[44px] rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 cursor-pointer"
                   @click="editingItemId = null"
                 >
@@ -285,6 +315,7 @@ async function handleDeleteItem(itemId: string) {
               <div class="flex gap-2">
                 <button
                   type="button"
+                  data-testid="edit-wishlist-btn"
                   class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 cursor-pointer"
                   @click="startEditItem(item)"
                 >
@@ -292,6 +323,7 @@ async function handleDeleteItem(itemId: string) {
                 </button>
                 <button
                   type="button"
+                  data-testid="delete-wishlist-btn"
                   class="min-h-[44px] rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 cursor-pointer"
                   @click="handleDeleteItem(item.id)"
                 >

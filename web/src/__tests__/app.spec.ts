@@ -530,4 +530,150 @@ describe('Secret Santa Frontend', () => {
     await wrapper.get('[data-testid="confirm-delete-btn"]').trigger('click')
     expect(adminStore.deleteEvent).toHaveBeenCalledWith('adm_tok_post')
   })
+
+  it('handles ParticipantView 404, interactive reveal, local hide/show toggle, target wishlist links, and own wishlist CRUD (Epic 5)', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/p/tok_epic5')
+    await router.isReady()
+
+    const pinia = createTestingPinia({ stubActions: true })
+    const partStore = useParticipantStore(pinia)
+
+    // 1. 404 when participant token is invalid or event is still draft
+    partStore.notFound = true
+    const wrapper404 = mount(ParticipantView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+    expect(wrapper404.find('[data-testid="not-found"]').exists()).toBe(true)
+
+    // 2. Initial unrevealed state (US-5.1 & US-5.2)
+    partStore.notFound = false
+    partStore.data = {
+      first_name: 'Alice',
+      last_name: 'Martin',
+      email: 'alice@example.com',
+      event_title: 'Noël Epic 5',
+      event_date: '2026-12-25',
+      budget: '25 €',
+      description: 'Apporter des chocolats',
+      locale: 'fr',
+      revealed: false,
+      link_clicked_at: null,
+      own_wishlist: [],
+    }
+
+    const wrapper = mount(ParticipantView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+
+    // Event details displayed, target hidden
+    expect(wrapper.text()).toContain('Bonjour Alice Martin')
+    expect(wrapper.text()).toContain('Noël Epic 5')
+    expect(wrapper.text()).toContain('2026-12-25')
+    expect(wrapper.text()).toContain('25 €')
+    expect(wrapper.text()).toContain('Apporter des chocolats')
+    expect(wrapper.find('[data-testid="discover-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="toggle-visibility-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="revealed-target-section"]').exists()).toBe(false)
+
+    // Click Discover -> calls revealTarget(token)
+    vi.mocked(partStore.revealTarget).mockImplementation(async () => {
+      partStore.data = {
+        ...partStore.data!,
+        revealed: true,
+        link_clicked_at: '2026-10-25T18:00:00Z',
+        target: {
+          first_name: 'Bob',
+          last_name: 'Dupont',
+          wishlist: [],
+        },
+      }
+    })
+    await wrapper.get('[data-testid="discover-btn"]').trigger('click')
+    expect(partStore.revealTarget).toHaveBeenCalledWith('tok_epic5')
+
+    // Target revealed with empty wishlist state (US-5.3)
+    expect(wrapper.find('[data-testid="discover-btn"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="target-full-name"]').text()).toBe('Bob Dupont')
+    expect(wrapper.find('[data-testid="target-wishlist-empty"]').exists()).toBe(true)
+
+    // Populate target wishlist and verify external link attributes (target="_blank" rel="noopener noreferrer")
+    partStore.data.target!.wishlist = [
+      {
+        id: 'tw1',
+        title: 'Casque Audio',
+        url: 'https://example.com/headphones',
+        note: 'Noir mat',
+        sort_order: 1,
+      },
+    ]
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="target-wishlist-empty"]').exists()).toBe(false)
+    const targetLink = wrapper.get('[data-testid="target-wishlist"] a')
+    expect(targetLink.attributes('href')).toBe('https://example.com/headphones')
+    expect(targetLink.attributes('target')).toBe('_blank')
+    expect(targetLink.attributes('rel')).toBe('noopener noreferrer')
+
+    // Local hide/show toggle removes and restores target from DOM via v-if (US-5.2)
+    const toggleBtn = wrapper.get('[data-testid="toggle-visibility-btn"]')
+    expect(toggleBtn.text()).toContain('Masquer le nom')
+    await toggleBtn.trigger('click')
+    expect(wrapper.find('[data-testid="revealed-target-section"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="target-full-name"]').exists()).toBe(false)
+    expect(toggleBtn.text()).toContain('Afficher le nom')
+    await toggleBtn.trigger('click')
+    expect(wrapper.find('[data-testid="revealed-target-section"]').exists()).toBe(true)
+
+    // 3. Own Wishlist CRUD & Reassurance Note (US-5.4)
+    expect(wrapper.get('[data-testid="own-wishlist-reassurance"]').text()).toContain(
+      'Visible uniquement par votre Père Noël secret. Aucun email n\'est envoyé lorsque vous modifiez votre liste.',
+    )
+    expect(wrapper.find('[data-testid="own-wishlist-empty"]').exists()).toBe(true)
+
+    // Add item
+    await wrapper.get('[data-testid="new-wishlist-title"]').setValue('Livre Go')
+    await wrapper.get('[data-testid="new-wishlist-url"]').setValue('amazon.fr/dp/123')
+    await wrapper.get('[data-testid="new-wishlist-note"]').setValue('Broché')
+    await wrapper.get('[data-testid="add-wishlist-form"]').trigger('submit.prevent')
+
+    expect(partStore.addWishlistItem).toHaveBeenCalledWith('tok_epic5', {
+      title: 'Livre Go',
+      url: 'amazon.fr/dp/123',
+      note: 'Broché',
+    })
+
+    // Simulate store update with new own wishlist item
+    partStore.data.own_wishlist = [
+      {
+        id: 'ow1',
+        title: 'Livre Go',
+        url: 'https://amazon.fr/dp/123',
+        note: 'Broché',
+        sort_order: 1,
+      },
+    ]
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="own-wishlist-empty"]').exists()).toBe(false)
+    const ownLink = wrapper.get('[data-testid="own-wishlist"] a')
+    expect(ownLink.attributes('href')).toBe('https://amazon.fr/dp/123')
+    expect(ownLink.attributes('target')).toBe('_blank')
+    expect(ownLink.attributes('rel')).toBe('noopener noreferrer')
+
+    // Edit own wishlist item
+    await wrapper.get('[data-testid="edit-wishlist-btn"]').trigger('click')
+    await wrapper.get('[data-testid="edit-wishlist-title"]').setValue('Livre Rust')
+    await wrapper.get('[data-testid="edit-wishlist-url"]').setValue('https://amazon.fr/dp/456')
+    await wrapper.get('[data-testid="edit-wishlist-note"]').setValue('2e édition')
+    await wrapper.get('[data-testid="save-wishlist-btn"]').trigger('click')
+
+    expect(partStore.updateWishlistItem).toHaveBeenCalledWith('tok_epic5', 'ow1', {
+      title: 'Livre Rust',
+      url: 'https://amazon.fr/dp/456',
+      note: '2e édition',
+    })
+
+    // Delete own wishlist item
+    await wrapper.get('[data-testid="delete-wishlist-btn"]').trigger('click')
+    expect(partStore.deleteWishlistItem).toHaveBeenCalledWith('tok_epic5', 'ow1')
+  })
 })

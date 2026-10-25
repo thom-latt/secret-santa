@@ -177,6 +177,10 @@ func (s *Server) handleAddWishlistItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load participant")
 		return
 	}
+	if ev.Status != "drawn" {
+		writeError(w, http.StatusNotFound, "draw has not taken place yet")
+		return
+	}
 
 	var req UpsertWishlistItemRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -214,6 +218,10 @@ func (s *Server) handleUpdateWishlistItem(w http.ResponseWriter, r *http.Request
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load participant")
+		return
+	}
+	if ev.Status != "drawn" {
+		writeError(w, http.StatusNotFound, "draw has not taken place yet")
 		return
 	}
 
@@ -257,6 +265,10 @@ func (s *Server) handleDeleteWishlistItem(w http.ResponseWriter, r *http.Request
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load participant")
+		return
+	}
+	if ev.Status != "drawn" {
+		writeError(w, http.StatusNotFound, "draw has not taken place yet")
 		return
 	}
 

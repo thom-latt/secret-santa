@@ -812,3 +812,240 @@ func TestEpic4PostDrawTrackingAndManagement(t *testing.T) {
 		t.Fatalf("expected 0 wishlist_items for deleted participant, got count=%d err=%v", count, err)
 	}
 }
+
+func TestEpic5ParticipantSpaceTargetRevealAndWishlist(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	// 1. Invalid participant token returns 404 across all endpoints
+	if rec := doJSON(t, env.handler, http.MethodGet, "/api/p/invalid-token", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on invalid token GET, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/p/invalid-token/reveal", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on invalid token POST /reveal, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/p/invalid-token/wishlist", UpsertWishlistItemRequest{Title: "Item"}); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on invalid token POST /wishlist, got %d", rec.Code)
+	}
+
+	// 2. Create a draft event with 3 participants
+	rec := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title:     "Noël Epic 5",
+		FirstName: "Alice",
+		LastName:  "Martin",
+		Email:     "alice@example.com",
+		Locale:    "fr",
+	})
+	var created CreateEventResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	adminTok := created.AdminToken
+
+	tr := true
+	doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+adminTok, UpdateEventRequest{
+		Title:                 "Noël Epic 5",
+		EventDate:             "2026-12-25",
+		Budget:                "25 €",
+		Description:           "Apporter des chocolats",
+		OrganizerParticipates: &tr,
+	})
+	for _, p := range []UpsertParticipantRequest{
+		{FirstName: "Bob", LastName: "Dupont", Email: "bob@example.com"},
+		{FirstName: "Charlie", LastName: "Durand", Email: "charlie@example.com"},
+	} {
+		doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+adminTok+"/participants", p)
+	}
+
+	// Grab Alice's token from DB before draw to verify draft-state 404 guards
+	partsBefore, err := env.repo.ListParticipants(created.ID)
+	if err != nil || len(partsBefore) != 3 {
+		t.Fatalf("failed to list participants: %v", err)
+	}
+	draftToken := partsBefore[0].ParticipantToken
+	if rec := doJSON(t, env.handler, http.MethodGet, "/api/p/"+draftToken, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on GET /api/p/:token before draw, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/p/"+draftToken+"/reveal", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on POST /api/p/:token/reveal before draw, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/p/"+draftToken+"/wishlist", UpsertWishlistItemRequest{Title: "Draft Item"}); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on POST /api/p/:token/wishlist before draw, got %d", rec.Code)
+	}
+
+	// 3. Execute draw
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+adminTok+"/draw", nil); rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on draw, got %d", rec.Code)
+	}
+
+	partsAfter, err := env.repo.ListParticipants(created.ID)
+	if err != nil {
+		t.Fatalf("list participants after draw: %v", err)
+	}
+	byID := make(map[string]db.Participant)
+	for _, p := range partsAfter {
+		byID[p.ID] = p
+	}
+	giver := partsAfter[0]
+	if giver.AssignedToID == nil {
+		t.Fatal("expected giver to have assigned_to_id")
+	}
+	receiver := byID[*giver.AssignedToID]
+
+	// Receiver adds a wishlist item before giver ever opens their link
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/p/"+receiver.ParticipantToken+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Secret Target Gift",
+		URL:   "example.com/secret-gift",
+		Note:  "Taille M",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 when receiver adds wishlist item, got %d", rec.Code)
+	}
+
+	// 4. US-5.1: Simulate multiple email/chat preview bot GET calls on giver's link
+	for i := 0; i < 3; i++ {
+		rec = doJSON(t, env.handler, http.MethodGet, "/api/p/"+giver.ParticipantToken, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 on GET participant space, got %d", rec.Code)
+		}
+		if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+			t.Fatalf("expected Referrer-Policy: no-referrer, got %q", got)
+		}
+		raw := rec.Body.String()
+		if strings.Contains(raw, receiver.FirstName) || strings.Contains(raw, "Secret Target Gift") || strings.Contains(raw, `"target"`) {
+			t.Fatalf("PRIVACY/BOT LEAK on GET attempt %d: target name or wishlist leaked before reveal: %s", i+1, raw)
+		}
+		var dto ParticipantSelfDTO
+		_ = json.Unmarshal(rec.Body.Bytes(), &dto)
+		if dto.Revealed || dto.LinkClickedAt != nil || dto.Target != nil {
+			t.Fatalf("expected Revealed=false, LinkClickedAt=nil, Target=nil before POST /reveal, got %+v", dto)
+		}
+		if dto.EventTitle != "Noël Epic 5" || dto.EventDate != "2026-12-25" || dto.Budget != "25 €" || dto.Description != "Apporter des chocolats" {
+			t.Fatalf("unexpected event details in participant DTO: %+v", dto)
+		}
+	}
+
+	// 5. US-5.2 & US-5.3: Explicit POST /reveal sets link_clicked_at (preserving 1st reveal timestamp on subsequent calls) and exposes target + wishlist
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/p/"+giver.ParticipantToken+"/reveal", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on POST /reveal, got %d", rec.Code)
+	}
+	var revealedDTO ParticipantSelfDTO
+	_ = json.Unmarshal(rec.Body.Bytes(), &revealedDTO)
+	if !revealedDTO.Revealed || revealedDTO.LinkClickedAt == nil || revealedDTO.Target == nil {
+		t.Fatalf("expected target revealed after POST /reveal, got %+v", revealedDTO)
+	}
+	firstRevealTime := *revealedDTO.LinkClickedAt
+	if revealedDTO.Target.FirstName != receiver.FirstName || revealedDTO.Target.LastName != receiver.LastName {
+		t.Fatalf("expected target %s %s, got %+v", receiver.FirstName, receiver.LastName, revealedDTO.Target)
+	}
+	if len(revealedDTO.Target.Wishlist) != 1 || revealedDTO.Target.Wishlist[0].Title != "Secret Target Gift" || revealedDTO.Target.Wishlist[0].URL != "https://example.com/secret-gift" {
+		t.Fatalf("expected receiver wishlist exposed after reveal, got %+v", revealedDTO.Target.Wishlist)
+	}
+
+	// Subsequent POST /reveal preserves the original link_clicked_at timestamp
+	rec2 := doJSON(t, env.handler, http.MethodPost, "/api/p/"+giver.ParticipantToken+"/reveal", nil)
+	var revealedDTO2 ParticipantSelfDTO
+	_ = json.Unmarshal(rec2.Body.Bytes(), &revealedDTO2)
+	if revealedDTO2.LinkClickedAt == nil || !revealedDTO2.LinkClickedAt.Equal(firstRevealTime) {
+		t.Fatalf("expected link_clicked_at preserved (%v), got %v", firstRevealTime, revealedDTO2.LinkClickedAt)
+	}
+
+	// 6. US-5.4: Managing Own Wishlist (CRUD, URL auto-prefix & scheme validation, no email sent, immediate admin indicator update)
+	env.mailer.Reset()
+
+	// Reject dangerous schemes and invalid inputs
+	for _, bad := range []UpsertWishlistItemRequest{
+		{Title: "", URL: "https://example.com"},
+		{Title: strings.Repeat("a", 201)},
+		{Title: "Valid", Note: strings.Repeat("n", 1001)},
+		{Title: "XSS 1", URL: "javascript:alert(1)"},
+		{Title: "XSS 2", URL: "JAVASCRIPT:alert(1)"},
+		{Title: "XSS 3", URL: "data:text/html,<script>alert(1)</script>"},
+		{Title: "XSS 4", URL: "vbscript:msgbox(1)"},
+	} {
+		if r := doJSON(t, env.handler, http.MethodPost, "/api/p/"+giver.ParticipantToken+"/wishlist", bad); r.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for invalid wishlist input %+v, got %d", bad, r.Code)
+		}
+	}
+
+	// Add 2 items (one without scheme, one with http://)
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/p/"+giver.ParticipantToken+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Casque Audio",
+		URL:   "fnac.com/casque",
+		Note:  "Noir",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on add item 1, got %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/p/"+giver.ParticipantToken+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Jeu de société",
+		URL:   "http://philibertnet.com/jeu",
+		Note:  "",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on add item 2, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &revealedDTO)
+	if len(revealedDTO.OwnWishlist) != 2 {
+		t.Fatalf("expected 2 own wishlist items, got %d", len(revealedDTO.OwnWishlist))
+	}
+	if revealedDTO.OwnWishlist[0].URL != "https://fnac.com/casque" || revealedDTO.OwnWishlist[1].URL != "http://philibertnet.com/jeu" {
+		t.Fatalf("unexpected normalized URLs: %+v", revealedDTO.OwnWishlist)
+	}
+	item1ID := revealedDTO.OwnWishlist[0].ID
+
+	// Update item 1
+	rec = doJSON(t, env.handler, http.MethodPut, "/api/p/"+giver.ParticipantToken+"/wishlist/"+item1ID, UpsertWishlistItemRequest{
+		Title: "Casque Audio Bluetooth",
+		URL:   "amazon.fr/dp/B001",
+		Note:  "Couleur argent",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on update wishlist item, got %d: %s", rec.Code, rec.Body.String())
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &revealedDTO)
+	if revealedDTO.OwnWishlist[0].Title != "Casque Audio Bluetooth" || revealedDTO.OwnWishlist[0].URL != "https://amazon.fr/dp/B001" || revealedDTO.OwnWishlist[0].Note != "Couleur argent" {
+		t.Fatalf("unexpected updated item: %+v", revealedDTO.OwnWishlist[0])
+	}
+
+	// Cross-participant authorization check: receiver cannot update or delete giver's wishlist item (404)
+	if r := doJSON(t, env.handler, http.MethodPut, "/api/p/"+receiver.ParticipantToken+"/wishlist/"+item1ID, UpsertWishlistItemRequest{
+		Title: "Hijack",
+	}); r.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 when another participant tries to update item, got %d", r.Code)
+	}
+	if r := doJSON(t, env.handler, http.MethodDelete, "/api/p/"+receiver.ParticipantToken+"/wishlist/"+item1ID, nil); r.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 when another participant tries to delete item, got %d", r.Code)
+	}
+
+	// Verify admin dashboard immediately reflects giver's wishlist_count = 2
+	var adminEv AdminEventResponseDTO
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodGet, "/api/admin/events/"+adminTok, nil).Body.Bytes(), &adminEv)
+	for _, p := range adminEv.Participants {
+		if p.ID == giver.ID && p.WishlistCount != 2 {
+			t.Fatalf("expected admin wishlist_count=2 for giver, got %d", p.WishlistCount)
+		}
+	}
+
+	// Delete item 1
+	rec = doJSON(t, env.handler, http.MethodDelete, "/api/p/"+giver.ParticipantToken+"/wishlist/"+item1ID, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on delete wishlist item, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &revealedDTO)
+	if len(revealedDTO.OwnWishlist) != 1 || revealedDTO.OwnWishlist[0].Title != "Jeu de société" {
+		t.Fatalf("expected 1 remaining item after delete, got %+v", revealedDTO.OwnWishlist)
+	}
+
+	// Verify admin dashboard immediately reflects giver's wishlist_count = 1
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodGet, "/api/admin/events/"+adminTok, nil).Body.Bytes(), &adminEv)
+	for _, p := range adminEv.Participants {
+		if p.ID == giver.ID && p.WishlistCount != 1 {
+			t.Fatalf("expected admin wishlist_count=1 after delete, got %d", p.WishlistCount)
+		}
+	}
+
+	// Verify zero emails were sent during wishlist additions, updates, and deletions
+	if len(env.mailer.SentMessages()) != 0 {
+		t.Fatalf("expected 0 emails sent when updating wishlist, got %d", len(env.mailer.SentMessages()))
+	}
+}
