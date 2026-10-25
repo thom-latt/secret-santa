@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"secret-santa/internal/config"
 	"secret-santa/internal/db"
@@ -1238,5 +1241,192 @@ func TestEpic6SuperAdminBackOffice(t *testing.T) {
 	logoutCookies := rec.Result().Cookies()
 	if len(logoutCookies) != 1 || logoutCookies[0].MaxAge != -1 || logoutCookies[0].Value != "" {
 		t.Fatalf("expected cleared cookie with MaxAge=-1 on logout, got %+v", logoutCookies)
+	}
+}
+
+func TestEpic7EmailSecurityAndPersistence(t *testing.T) {
+	// 1. US-7.1: Strict Email Simulation in Development (APP_ENV=development) even when SMTP_* are set
+	var logBuf bytes.Buffer
+	origOut := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(origOut)
+
+	// 2. US-7.2: On-disk SQLite persistence & automatic idempotent migrations across restarts
+	dbFile := filepath.Join(t.TempDir(), "data", "secret-santa.db")
+	sqlDB1, err := db.Open(dbFile)
+	if err != nil {
+		t.Fatalf("open file-backed sqlite: %v", err)
+	}
+
+	// Verify SQLite PRAGMAs (WAL, foreign_keys, busy_timeout)
+	var journalMode string
+	if err := sqlDB1.QueryRow(`PRAGMA journal_mode`).Scan(&journalMode); err != nil || strings.ToLower(journalMode) != "wal" {
+		t.Fatalf("expected journal_mode=wal, got %q (err=%v)", journalMode, err)
+	}
+	var fkEnabled int
+	if err := sqlDB1.QueryRow(`PRAGMA foreign_keys`).Scan(&fkEnabled); err != nil || fkEnabled != 1 {
+		t.Fatalf("expected foreign_keys=1, got %d (err=%v)", fkEnabled, err)
+	}
+	var busyTimeout int
+	if err := sqlDB1.QueryRow(`PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil || busyTimeout != 5000 {
+		t.Fatalf("expected busy_timeout=5000, got %d (err=%v)", busyTimeout, err)
+	}
+
+	cfg := &config.Config{
+		AppEnv:             "development",
+		Port:               "8080",
+		AppBaseURL:         "https://santa.nas.local",
+		DBPath:             dbFile,
+		SuperAdminEmail:    "admin@nas.local",
+		SuperAdminPassword: "strong-nas-password",
+		SessionSecret:      "0123456789abcdef0123456789abcdef",
+		SMTPHost:           "127.0.0.1",
+		SMTPPort:           1, // closed port — guarantees zero network connection in dev
+		SMTPUser:           "smtp-user",
+		SMTPPass:           "smtp-pass",
+		SMTPFrom:           "Secret Santa <noreply@nas.local>",
+		SMTPTLSMode:        "starttls",
+	}
+
+	mailSvc1 := mailer.NewMailer(cfg)
+	mock1, ok := mailSvc1.(*mailer.ConsoleMockMailer)
+	if !ok {
+		t.Fatalf("expected *mailer.ConsoleMockMailer in development, got %T", mailSvc1)
+	}
+
+	staticFS := fstest.MapFS{
+		"index.html":        &fstest.MapFile{Data: []byte("<!doctype html><html><body><div id=\"app\">SPA</div></body></html>")},
+		"assets/app-123.js": &fstest.MapFile{Data: []byte("console.log('santa');")},
+	}
+
+	repo1 := db.NewRepository(sqlDB1)
+	router1 := NewRouter(cfg, repo1, mailSvc1, staticFS)
+
+	// Verify Security Headers & SPA Fallback on non-API routes
+	for _, spaPath := range []string{"/", "/admin/events/some-token", "/p/some-part-token", "/superadmin"} {
+		rec := doJSON(t, router1, http.MethodGet, spaPath, nil)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<div id="app">SPA</div>`) {
+			t.Fatalf("expected 200 and index.html for SPA route %s, got %d: %s", spaPath, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+			t.Fatalf("expected Referrer-Policy: no-referrer on %s, got %q", spaPath, got)
+		}
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Fatalf("expected X-Content-Type-Options: nosniff on %s, got %q", spaPath, got)
+		}
+		if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+			t.Fatalf("expected X-Frame-Options: DENY on %s, got %q", spaPath, got)
+		}
+	}
+
+	// Existing static asset is served directly; missing asset with extension or unknown /api/* returns 404
+	if rec := doJSON(t, router1, http.MethodGet, "/assets/app-123.js", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "console.log") {
+		t.Fatalf("expected 200 for existing static asset, got %d", rec.Code)
+	}
+	if rec := doJSON(t, router1, http.MethodGet, "/assets/missing.js", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing static asset with extension, got %d", rec.Code)
+	}
+	if rec := doJSON(t, router1, http.MethodGet, "/api/nonexistent", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown API endpoint, got %d", rec.Code)
+	}
+
+	// Create event, add participants, run draw, reveal target, and add wishlist item on Instance 1
+	rec := doJSON(t, router1, http.MethodPost, "/api/events", CreateEventRequest{
+		Title:     "Noël sur NAS",
+		FirstName: "Alice",
+		LastName:  "Martin",
+		Email:     "alice@nas.local",
+		Locale:    "fr",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on create event, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var created CreateEventResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+
+	for _, p := range []UpsertParticipantRequest{
+		{FirstName: "Bob", LastName: "Dupont", Email: "bob@nas.local"},
+		{FirstName: "Charlie", LastName: "Durand", Email: "charlie@nas.local"},
+	} {
+		doJSON(t, router1, http.MethodPost, "/api/admin/events/"+created.AdminToken+"/participants", p)
+	}
+
+	var adminEv AdminEventResponseDTO
+	rec = doJSON(t, router1, http.MethodPost, "/api/admin/events/"+created.AdminToken+"/draw", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on draw in dev mode with unreachable SMTP_HOST, got %d: %s", rec.Code, rec.Body.String())
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &adminEv)
+	aliceTok := adminEv.OrganizerParticipantToken
+
+	// Verify ConsoleMockMailer captured all 4 emails (1 admin creation + 3 participant draw emails) and logged clickable links
+	if len(mock1.SentMessages()) != 4 {
+		t.Fatalf("expected 4 mock emails recorded in dev mode, got %d", len(mock1.SentMessages()))
+	}
+	if !strings.Contains(logBuf.String(), "https://santa.nas.local/admin/events/"+created.AdminToken) || !strings.Contains(logBuf.String(), "https://santa.nas.local/p/"+aliceTok) {
+		t.Fatalf("expected clickable magic links in terminal logs, got:\n%s", logBuf.String())
+	}
+
+	// Reveal target and add wishlist item before container restart
+	doJSON(t, router1, http.MethodPost, "/api/p/"+aliceTok+"/reveal", nil)
+	doJSON(t, router1, http.MethodPost, "/api/p/"+aliceTok+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Disque dur NAS 8 To",
+		URL:   "example.com/hdd-8tb",
+		Note:  "Silencieux",
+	})
+
+	// Toggle public creation off via Super Admin before restart
+	loginRec := doJSON(t, router1, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+		Email: "admin@nas.local", Password: "strong-nas-password",
+	})
+	saCookie := loginRec.Result().Cookies()[0]
+	doJSON(t, router1, http.MethodPut, "/api/superadmin/settings", SuperAdminSettingsRequest{
+		AllowPublicEventCreation: false,
+	}, saCookie)
+
+	// Close Instance 1 DB connection (simulating container stop)
+	if err := sqlDB1.Close(); err != nil {
+		t.Fatalf("close sqlDB1: %v", err)
+	}
+
+	// Re-open SQLite DB on the same file (simulating container restart & automatic idempotent startup migrations)
+	sqlDB2, err := db.Open(dbFile)
+	if err != nil {
+		t.Fatalf("re-open file-backed sqlite after restart: %v", err)
+	}
+	defer sqlDB2.Close()
+
+	router2 := NewRouter(cfg, db.NewRepository(sqlDB2), mailer.NewMailer(cfg), staticFS)
+
+	// Verify app_settings persisted across restart
+	var pubCfg PublicConfigDTO
+	_ = json.Unmarshal(doJSON(t, router2, http.MethodGet, "/api/public/config", nil).Body.Bytes(), &pubCfg)
+	if pubCfg.AllowPublicEventCreation {
+		t.Fatal("expected allow_public_event_creation=false to persist across container restart")
+	}
+
+	// Verify event, draw status, reveal status, and wishlist count persisted across restart
+	var adminEvAfter AdminEventResponseDTO
+	rec = doJSON(t, router2, http.MethodGet, "/api/admin/events/"+created.AdminToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get admin event after restart, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &adminEvAfter)
+	if adminEvAfter.Title != "Noël sur NAS" || adminEvAfter.Status != "drawn" || len(adminEvAfter.Participants) != 3 {
+		t.Fatalf("unexpected event state after restart: %+v", adminEvAfter)
+	}
+	if adminEvAfter.Participants[0].LinkClickedAt == nil || adminEvAfter.Participants[0].WishlistCount != 1 {
+		t.Fatalf("expected Alice reveal timestamp and wishlist_count=1 to persist across restart, got %+v", adminEvAfter.Participants[0])
+	}
+
+	// Verify participant space & wishlist items persisted across restart
+	var aliceSpaceAfter ParticipantSelfDTO
+	rec = doJSON(t, router2, http.MethodGet, "/api/p/"+aliceTok, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get participant space after restart, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &aliceSpaceAfter)
+	if !aliceSpaceAfter.Revealed || aliceSpaceAfter.Target == nil || len(aliceSpaceAfter.OwnWishlist) != 1 || aliceSpaceAfter.OwnWishlist[0].Title != "Disque dur NAS 8 To" {
+		t.Fatalf("unexpected participant space state after restart: %+v", aliceSpaceAfter)
 	}
 }

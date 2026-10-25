@@ -1,3 +1,9 @@
+# ==============================================================================
+# Secret Santa — Self-Hosted Docker Compose Configuration (NAS / Home Server)
+# Usage:
+#   1. cp .env.example .env && edit .env
+#   2. docker compose up -d
+# ==============================================================================
 services:
   secret-santa:
     build:
@@ -5,11 +11,14 @@ services:
       dockerfile: Dockerfile
     container_name: secret-santa
     restart: unless-stopped
+    # Expose HTTP port to host / reverse proxy (Nginx)
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
+    # Load environment configuration (APP_BASE_URL, SUPER_ADMIN_*, SMTP_*)
     env_file:
       - .env
     environment:
       - DB_PATH=/data/secret-santa.db
+    # Mount persistent NAS folder to /data so SQLite DB + WAL survive restarts/updates
     volumes:
       - ./data:/data

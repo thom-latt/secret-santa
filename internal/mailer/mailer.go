@@ -19,8 +19,8 @@ type Mailer interface {
 }
 
 func NewMailer(cfg *config.Config) Mailer {
-	if cfg.AppEnv == "development" {
-		return NewMockMailer()
+	if cfg == nil || cfg.AppEnv != "production" {
+		return NewConsoleMockMailer()
 	}
 	return NewSMTPMailer(cfg)
 }

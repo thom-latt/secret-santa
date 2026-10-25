@@ -12,10 +12,17 @@ type MockMailer struct {
 	failFor  map[string]error
 }
 
+// ConsoleMockMailer is an alias for MockMailer (US-7.1).
+type ConsoleMockMailer = MockMailer
+
 func NewMockMailer() *MockMailer {
 	return &MockMailer{
 		failFor: make(map[string]error),
 	}
+}
+
+func NewConsoleMockMailer() *ConsoleMockMailer {
+	return NewMockMailer()
 }
 
 func (m *MockMailer) SetFailFor(email string, err error) {
