@@ -78,6 +78,10 @@ function participantName(id: string): string {
   return p ? `${p.first_name} ${p.last_name}` : id
 }
 
+function formatDate(iso: string): string {
+  return iso.slice(0, 10)
+}
+
 function isPairExcluded(idA: string, idB: string): boolean {
   if (!idA || !idB || !store.event) return false
   return store.event.exclusions.some(
@@ -424,22 +428,26 @@ async function confirmAndDeleteEvent() {
             <div v-if="editingParticipantId === p.id" class="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <input
                 v-model="editPartFirstName"
+                data-testid="edit-participant-first-name"
                 type="text"
                 class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <input
                 v-model="editPartLastName"
+                data-testid="edit-participant-last-name"
                 type="text"
                 class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <input
                 v-model="editPartEmail"
+                data-testid="edit-participant-email"
                 type="email"
                 class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <div class="flex gap-2">
                 <button
                   type="button"
+                  data-testid="save-participant-btn"
                   class="min-h-[44px] flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white cursor-pointer"
                   @click="saveEditParticipant(p.id)"
                 >
@@ -447,6 +455,7 @@ async function confirmAndDeleteEvent() {
                 </button>
                 <button
                   type="button"
+                  data-testid="cancel-participant-btn"
                   class="min-h-[44px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 cursor-pointer"
                   @click="editingParticipantId = null"
                 >
@@ -471,25 +480,37 @@ async function confirmAndDeleteEvent() {
                 <!-- Post-draw tracking indicators (US-4.1) -->
                 <div v-if="store.event.status === 'drawn'" class="mt-2 flex flex-wrap gap-2 text-xs">
                   <span
+                    data-testid="indicator-email"
                     class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium"
-                    :class="p.email_sent_at ? 'bg-emerald-50 text-emerald-700' : p.email_error ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-700'"
+                    :class="p.email_sent_at ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'"
                   >
-                    {{ t('admin.tracking_email') }}:
-                    {{ p.email_sent_at ? t('admin.email_sent') : p.email_error ? t('admin.email_failed') : t('admin.email_pending') }}
+                    <span aria-hidden="true">{{ p.email_sent_at ? '✓' : '✕' }}</span>
+                    <span>
+                      {{ t('admin.tracking_email') }}:
+                      {{ p.email_sent_at ? t('admin.email_sent') : t('admin.email_failed') }}
+                    </span>
                   </span>
                   <span
+                    data-testid="indicator-revealed"
                     class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium"
                     :class="p.link_clicked_at ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'"
                   >
-                    {{ t('admin.tracking_revealed') }}:
-                    {{ p.link_clicked_at ? t('admin.revealed_yes') : t('admin.revealed_pending') }}
+                    <span aria-hidden="true">{{ p.link_clicked_at ? '👁️' : '⏳' }}</span>
+                    <span>
+                      {{ t('admin.tracking_revealed') }}:
+                      {{ p.link_clicked_at ? t('admin.revealed_yes_date', { date: formatDate(p.link_clicked_at) }) : t('admin.revealed_pending') }}
+                    </span>
                   </span>
                   <span
+                    data-testid="indicator-wishlist"
                     class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium"
                     :class="p.wishlist_count > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'"
                   >
-                    {{ t('admin.tracking_wishlist') }}:
-                    {{ p.wishlist_count > 0 ? t('admin.wishlist_yes', { count: p.wishlist_count }) : t('admin.wishlist_empty') }}
+                    <span aria-hidden="true">{{ p.wishlist_count > 0 ? '🎁' : '📋' }}</span>
+                    <span>
+                      {{ t('admin.tracking_wishlist') }}:
+                      {{ p.wishlist_count > 0 ? t('admin.wishlist_yes', { count: p.wishlist_count }) : t('admin.wishlist_empty') }}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -497,6 +518,7 @@ async function confirmAndDeleteEvent() {
               <div class="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  data-testid="edit-participant-btn"
                   class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
                   @click="startEditParticipant(p)"
                 >
@@ -505,6 +527,7 @@ async function confirmAndDeleteEvent() {
                 <button
                   v-if="store.event.status === 'draft'"
                   type="button"
+                  data-testid="delete-participant-btn"
                   class="min-h-[44px] rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 cursor-pointer"
                   @click="handleDeleteParticipant(p.id)"
                 >
@@ -513,6 +536,7 @@ async function confirmAndDeleteEvent() {
                 <button
                   v-if="store.event.status === 'drawn'"
                   type="button"
+                  data-testid="resend-participant-btn"
                   class="min-h-[44px] rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
                   @click="handleResendSingle(p.id)"
                 >

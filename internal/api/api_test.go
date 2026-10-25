@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 type testEnv struct {
 	handler http.Handler
+	db      *sql.DB
 	repo    *db.Repository
 	mailer  *mailer.MockMailer
 	cfg     *config.Config
@@ -43,6 +45,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	return &testEnv{
 		handler: handler,
+		db:      sqlDB,
 		repo:    repo,
 		mailer:  mockMail,
 		cfg:     cfg,
@@ -626,5 +629,186 @@ func TestEpic3DrawAndInitialEmailSending(t *testing.T) {
 	}
 	if rec := doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/exclusions/any-id", nil); rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 when deleting exclusion after draw, got %d", rec.Code)
+	}
+}
+
+func TestEpic4PostDrawTrackingAndManagement(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	// Create event with organizer participating + 3 other participants + 1 exclusion
+	rec := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title:     "Famille 2026",
+		FirstName: "Alice",
+		LastName:  "Martin",
+		Email:     "alice@example.com",
+		Locale:    "fr",
+	})
+	var created CreateEventResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	tok := created.AdminToken
+
+	for _, p := range []UpsertParticipantRequest{
+		{FirstName: "Bob", LastName: "Dupont", Email: "bob@example.com"},
+		{FirstName: "Charlie", LastName: "Durand", Email: "charlie@example.com"},
+		{FirstName: "Diane", LastName: "Moreau", Email: "diane@example.com"},
+	} {
+		doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants", p)
+	}
+
+	var ev AdminEventResponseDTO
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodGet, "/api/admin/events/"+tok, nil).Body.Bytes(), &ev)
+	// US-4.2: In draft status, organizer_participant_token is not exposed
+	if ev.OrganizerParticipantToken != "" {
+		t.Fatalf("expected empty organizer_participant_token in draft status, got %q", ev.OrganizerParticipantToken)
+	}
+
+	aliceID := ev.Participants[0].ID
+	bobID := ev.Participants[1].ID
+	doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: aliceID,
+		ParticipantBID: bobID,
+	})
+
+	// Run draw with Bob's email failing initially
+	env.mailer.Reset()
+	env.mailer.SetFailFor("bob@example.com", errors.New("smtp connection reset"))
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/draw", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on draw, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+
+	// US-4.2: In drawn status with organizer_participates=true, organizer_participant_token is exposed
+	if ev.OrganizerParticipantToken == "" {
+		t.Fatal("expected non-empty organizer_participant_token in drawn status when organizer participates")
+	}
+	aliceToken := ev.OrganizerParticipantToken
+
+	// Alice reveals her target and adds 2 wishlist items
+	doJSON(t, env.handler, http.MethodPost, "/api/p/"+aliceToken+"/reveal", nil)
+	doJSON(t, env.handler, http.MethodPost, "/api/p/"+aliceToken+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Montre", URL: "https://example.com/watch",
+	})
+	doJSON(t, env.handler, http.MethodPost, "/api/p/"+aliceToken+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Écharpe", Note: "Rouge",
+	})
+
+	// US-4.1: Check admin tracking dashboard response (no draw disclosure, accurate indicators)
+	rec = doJSON(t, env.handler, http.MethodGet, "/api/admin/events/"+tok, nil)
+	rawBody := rec.Body.String()
+	if strings.Contains(rawBody, "assigned_to") || strings.Contains(rawBody, `"target"`) {
+		t.Fatalf("PRIVACY LEAK in admin response: %s", rawBody)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.Participants[0].LinkClickedAt == nil || ev.Participants[0].WishlistCount != 2 || ev.Participants[0].EmailSentAt == nil {
+		t.Fatalf("expected Alice tracking indicators (sent, revealed, wishlist=2), got %+v", ev.Participants[0])
+	}
+	if ev.Participants[1].EmailSentAt != nil || ev.Participants[1].EmailError == nil {
+		t.Fatalf("expected Bob email status failed, got %+v", ev.Participants[1])
+	}
+
+	// US-4.3: Edit event metadata in drawn status (and ensure organizer_participates cannot be toggled off after draw)
+	f := false
+	rec = doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok, UpdateEventRequest{
+		Title:                 "Famille Noël 2026 - Mis à jour",
+		EventDate:             "2026-12-24",
+		Budget:                "40 €",
+		Description:           "Rendez-vous à 20h",
+		OrganizerParticipates: &f,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on post-draw event metadata update, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.Title != "Famille Noël 2026 - Mis à jour" || ev.EventDate != "2026-12-24" || ev.Budget != "40 €" || ev.Description != "Rendez-vous à 20h" || !ev.OrganizerParticipates {
+		t.Fatalf("unexpected updated event metadata: %+v", ev)
+	}
+
+	// US-4.3: Fixing a typo in First Name / Last Name WITHOUT changing email preserves token, link_clicked_at, and email_sent_at
+	rec = doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok+"/participants/"+aliceID, UpsertParticipantRequest{
+		FirstName: "Alicia",
+		LastName:  "Martin-Dupuis",
+		Email:     "ALICE@example.com",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on name typo fix, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.OrganizerFirstName != "Alicia" || ev.OrganizerLastName != "Martin-Dupuis" {
+		t.Fatalf("expected organizer name synced on event, got %+v", ev)
+	}
+	if ev.OrganizerParticipantToken != aliceToken || ev.Participants[0].LinkClickedAt == nil || ev.Participants[0].EmailSentAt == nil {
+		t.Fatalf("expected token, link_clicked_at, and email_sent_at preserved when email is unchanged, got %+v", ev.Participants[0])
+	}
+
+	// US-4.3: Validation & duplicate email check when editing participant in drawn status
+	if r := doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok+"/participants/"+bobID, UpsertParticipantRequest{
+		FirstName: "Bob", LastName: "Dupont", Email: "charlie@example.com",
+	}); r.Code != http.StatusConflict {
+		t.Fatalf("expected 409 on duplicate email in drawn status, got %d", r.Code)
+	}
+	if r := doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok+"/participants/"+bobID, UpsertParticipantRequest{
+		FirstName: "Bob", LastName: "Dupont", Email: "not-an-email",
+	}); r.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid email in drawn status, got %d", r.Code)
+	}
+
+	// US-4.3: Individual "Resend email" button on Bob updates email_sent_at, clears email_error, and includes updated event metadata
+	env.mailer.SetFailFor("bob@example.com", nil)
+	env.mailer.Reset()
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants/"+bobID+"/resend", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on individual resend, got %d: %s", rec.Code, rec.Body.String())
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.Participants[1].EmailSentAt == nil || ev.Participants[1].EmailError != nil {
+		t.Fatalf("expected Bob email_sent_at set and email_error nil after individual resend, got %+v", ev.Participants[1])
+	}
+	sent := env.mailer.SentMessages()
+	if len(sent) != 1 || !strings.Contains(sent[0].Body, "Famille Noël 2026 - Mis à jour") || !strings.Contains(sent[0].Body, "40 €") {
+		t.Fatalf("expected resent email to contain updated event metadata, got %+v", sent)
+	}
+
+	// US-4.2: Verify that an event drawn with organizer_participates=false does NOT expose organizer_participant_token
+	rec2 := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title: "Non-Participating Org", FirstName: "Org", LastName: "One", Email: "org@example.com", Locale: "en",
+	})
+	var created2 CreateEventResponse
+	_ = json.Unmarshal(rec2.Body.Bytes(), &created2)
+	doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+created2.AdminToken, UpdateEventRequest{
+		Title: "Non-Participating Org", OrganizerParticipates: &f,
+	})
+	for _, p := range []UpsertParticipantRequest{
+		{FirstName: "P1", LastName: "L1", Email: "p1@example.com"},
+		{FirstName: "P2", LastName: "L2", Email: "p2@example.com"},
+		{FirstName: "P3", LastName: "L3", Email: "p3@example.com"},
+	} {
+		doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+created2.AdminToken+"/participants", p)
+	}
+	var ev2 AdminEventResponseDTO
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+created2.AdminToken+"/draw", nil).Body.Bytes(), &ev2)
+	if ev2.Status != "drawn" || ev2.OrganizerParticipates || ev2.OrganizerParticipantToken != "" {
+		t.Fatalf("expected empty organizer_participant_token when organizer_participates=false, got %+v", ev2)
+	}
+
+	// US-4.4: Manual event deletion cascades across events, participants, exclusions, and wishlist_items in SQLite
+	eventID := ev.ID
+	rec = doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on delete drawn event, got %d", rec.Code)
+	}
+	var count int
+	for _, query := range []string{
+		`SELECT COUNT(*) FROM events WHERE id = ?`,
+		`SELECT COUNT(*) FROM participants WHERE event_id = ?`,
+		`SELECT COUNT(*) FROM exclusions WHERE event_id = ?`,
+	} {
+		if err := env.db.QueryRow(query, eventID).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("expected 0 rows for query %q after cascade delete, got count=%d err=%v", query, count, err)
+		}
+	}
+	if err := env.db.QueryRow(`SELECT COUNT(*) FROM wishlist_items WHERE participant_id = ?`, aliceID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("expected 0 wishlist_items for deleted participant, got count=%d err=%v", count, err)
 	}
 }

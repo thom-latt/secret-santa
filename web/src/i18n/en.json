@@ -67,6 +67,7 @@
     "email_pending": "Pending",
     "tracking_revealed": "Revealed target",
     "revealed_yes": "Yes",
+    "revealed_yes_date": "Yes ({date})",
     "revealed_pending": "Pending",
     "tracking_wishlist": "Filled wishlist",
     "wishlist_yes": "Yes ({count})",

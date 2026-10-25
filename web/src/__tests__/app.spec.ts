@@ -411,4 +411,123 @@ describe('Secret Santa Frontend', () => {
     expect(wrapper.find('[data-testid="add-exclusion-form"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="launch-draw-btn"]').exists()).toBe(false)
   })
+
+  it('tracks post-draw status without draw disclosure, links to organizer page, edits metadata/participants, resends emails, and deletes event (Epic 4)', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/admin/events/adm_tok_post')
+    await router.isReady()
+
+    const pinia = createTestingPinia({ stubActions: true })
+    const adminStore = useEventAdminStore(pinia)
+
+    adminStore.notFound = false
+    adminStore.event = {
+      id: 'ev_post',
+      title: 'Noël Famille',
+      description: 'RDV 19h',
+      event_date: '2026-12-24',
+      budget: '30 €',
+      organizer_first_name: 'Alice',
+      organizer_last_name: 'Martin',
+      organizer_email: 'alice@example.com',
+      organizer_participates: true,
+      organizer_participant_token: 'part_tok_org',
+      status: 'drawn',
+      locale: 'fr',
+      created_at: '2026-10-25T12:00:00Z',
+      drawn_at: '2026-10-25T13:00:00Z',
+      participants: [
+        {
+          id: 'p1',
+          first_name: 'Alice',
+          last_name: 'Martin',
+          email: 'alice@example.com',
+          is_organizer: true,
+          link_clicked_at: '2026-10-25T15:30:00Z',
+          email_sent_at: '2026-10-25T13:00:01Z',
+          email_error: null,
+          wishlist_count: 2,
+        },
+        {
+          id: 'p2',
+          first_name: 'Bob',
+          last_name: 'Dupont',
+          email: 'bob@example.com',
+          is_organizer: false,
+          link_clicked_at: null,
+          email_sent_at: null,
+          email_error: 'smtp timeout',
+          wishlist_count: 0,
+        },
+      ],
+      exclusions: [],
+      feasibility: {
+        mode: 'single_cycle',
+        diagnostic: '',
+      },
+    }
+
+    const wrapper = mount(EventAdminView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+
+    // US-4.1: 3 indicators with icon (aria-hidden="true") + accessible text for each participant
+    const emailBadges = wrapper.findAll('[data-testid="indicator-email"]')
+    const revealedBadges = wrapper.findAll('[data-testid="indicator-revealed"]')
+    const wishlistBadges = wrapper.findAll('[data-testid="indicator-wishlist"]')
+
+    expect(emailBadges[0].find('[aria-hidden="true"]').exists()).toBe(true)
+    expect(emailBadges[0].text()).toContain('Statut Email: Envoyé')
+    expect(revealedBadges[0].text()).toContain('Cible découverte: Oui (2026-10-25)')
+    expect(wishlistBadges[0].text()).toContain('Liste remplie: Oui (2)')
+
+    expect(emailBadges[1].text()).toContain('Statut Email: Échec')
+    expect(revealedBadges[1].text()).toContain('Cible découverte: En attente')
+    expect(wishlistBadges[1].text()).toContain('Liste remplie: Vide')
+
+    // Global "Resend failed emails" button displayed when at least one participant has email_sent_at === null
+    const resendFailedBtn = wrapper.get('[data-testid="resend-failed-btn"]')
+    await resendFailedBtn.trigger('click')
+    expect(adminStore.resendFailedEmails).toHaveBeenCalledWith('adm_tok_post')
+
+    adminStore.event.participants[1].email_sent_at = '2026-10-25T16:00:00Z'
+    adminStore.event.participants[1].email_error = null
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="resend-failed-btn"]').exists()).toBe(false)
+
+    // US-4.2: "Go to my participant page" button displayed only if organizer_participates == true and status == 'drawn'
+    const orgLink = wrapper.get('[data-testid="organizer-participant-link"]')
+    expect(orgLink.attributes('href')).toBe('/p/part_tok_org')
+
+    adminStore.event.organizer_participates = false
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="organizer-participant-link"]').exists()).toBe(false)
+    adminStore.event.organizer_participates = true
+    await wrapper.vm.$nextTick()
+
+    // US-4.3: Edit participant identity/email in drawn status (no delete button shown) and resend individual email
+    expect(wrapper.find('[data-testid="delete-participant-btn"]').exists()).toBe(false)
+    const editBtns = wrapper.findAll('[data-testid="edit-participant-btn"]')
+    await editBtns[1].trigger('click')
+
+    await wrapper.get('[data-testid="edit-participant-first-name"]').setValue('Bobby')
+    await wrapper.get('[data-testid="edit-participant-last-name"]').setValue('Dupont-Morel')
+    await wrapper.get('[data-testid="edit-participant-email"]').setValue('bobby@example.com')
+    await wrapper.get('[data-testid="save-participant-btn"]').trigger('click')
+
+    expect(adminStore.updateParticipant).toHaveBeenCalledWith('adm_tok_post', 'p2', {
+      first_name: 'Bobby',
+      last_name: 'Dupont-Morel',
+      email: 'bobby@example.com',
+    })
+
+    const resendBtns = wrapper.findAll('[data-testid="resend-participant-btn"]')
+    await resendBtns[1].trigger('click')
+    expect(adminStore.resendParticipantEmail).toHaveBeenCalledWith('adm_tok_post', 'p2')
+
+    // US-4.4: Delete event via confirmation modal and redirect to '/'
+    await wrapper.get('[data-testid="delete-event-btn"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-delete-btn"]').trigger('click')
+    expect(adminStore.deleteEvent).toHaveBeenCalledWith('adm_tok_post')
+  })
 })

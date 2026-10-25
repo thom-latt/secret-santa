@@ -28,7 +28,7 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 	for _, p := range participants {
 		partIDs = append(partIDs, p.ID)
 		nameByID[p.ID] = strings.TrimSpace(p.FirstName + " " + p.LastName)
-		if p.IsOrganizer && ev.Status == "drawn" {
+		if p.IsOrganizer && ev.OrganizerParticipates && ev.Status == "drawn" {
 			orgToken = p.ParticipantToken
 		}
 		partDTOs = append(partDTOs, AdminParticipantDTO{

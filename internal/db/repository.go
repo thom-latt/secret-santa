@@ -627,7 +627,7 @@ func (r *Repository) RecordEmailStatus(participantID string, sendErr error) erro
 	}
 	errMsg := sendErr.Error()
 	_, err := r.db.Exec(`
-		UPDATE participants SET email_error = ?
+		UPDATE participants SET email_sent_at = NULL, email_error = ?
 		WHERE id = ?
 	`, errMsg, participantID)
 	return err

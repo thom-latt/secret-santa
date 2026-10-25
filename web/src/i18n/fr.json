@@ -67,6 +67,7 @@
     "email_pending": "En attente",
     "tracking_revealed": "Cible découverte",
     "revealed_yes": "Oui",
+    "revealed_yes_date": "Oui ({date})",
     "revealed_pending": "En attente",
     "tracking_wishlist": "Liste remplie",
     "wishlist_yes": "Oui ({count})",
