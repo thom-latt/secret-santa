@@ -21,9 +21,14 @@ export function detectInitialLocale(): SupportedLocale {
   return 'fr'
 }
 
+const initialLocale = detectInitialLocale()
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = initialLocale
+}
+
 export const i18n = createI18n({
   legacy: false,
-  locale: detectInitialLocale(),
+  locale: initialLocale,
   fallbackLocale: 'fr',
   messages: {
     fr,
@@ -33,6 +38,9 @@ export const i18n = createI18n({
 
 export function setLocale(locale: SupportedLocale) {
   i18n.global.locale.value = locale
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = locale
+  }
   try {
     localStorage.setItem('secret_santa_locale', locale)
   } catch {

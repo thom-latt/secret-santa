@@ -310,15 +310,38 @@ func TestEndToEndAllUserStories(t *testing.T) {
 	// 9. Unified Recovery of Lost Links (US-1.4)
 	env.mailer.Reset()
 	rec = doJSON(t, env.handler, http.MethodPost, "/api/recover", RecoverLinksRequest{
-		Email:  "alice.new@example.com",
+		Email:  "ALICE.NEW@EXAMPLE.COM",
 		Locale: "fr",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 on recover, got %d", rec.Code)
 	}
+	var recResp GenericMessageResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &recResp)
+	if recResp.Message != "Si un événement est associé à cette adresse, un email a été envoyé." {
+		t.Fatalf("unexpected generic message: %q", recResp.Message)
+	}
 	msgs := env.mailer.SentMessages()
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Body, created.AdminToken) || !strings.Contains(msgs[0].Body, adminEv.OrganizerParticipantToken) {
 		t.Fatalf("expected recovery email with both admin and participant links, got %+v", msgs)
+	}
+
+	// Non-existent email returns identical generic message without sending email
+	env.mailer.Reset()
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/recover", RecoverLinksRequest{
+		Email:  "unknown.nobody@example.com",
+		Locale: "fr",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on recover for unknown email, got %d", rec.Code)
+	}
+	var recRespUnknown GenericMessageResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &recRespUnknown)
+	if recRespUnknown.Message != recResp.Message {
+		t.Fatalf("expected identical generic message for unknown email, got %q vs %q", recRespUnknown.Message, recResp.Message)
+	}
+	if len(env.mailer.SentMessages()) != 0 {
+		t.Fatalf("expected 0 emails sent for unknown email, got %d", len(env.mailer.SentMessages()))
 	}
 
 	// 10. Super Admin Back-Office (Epic 6: US-6.1, US-6.2, US-6.3, US-6.4)

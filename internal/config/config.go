@@ -38,8 +38,8 @@ func Load() (*Config, error) {
 
 	port := strings.TrimSpace(getEnv("PORT", "8080"))
 	baseURL := strings.TrimRight(strings.TrimSpace(getEnv("APP_BASE_URL", "")), "/")
-	if baseURL == "" {
-		if appEnv == "production" {
+	if baseURL == "" || (appEnv == "development" && baseURL == "http://localhost:8080" && port != "8080") {
+		if appEnv == "production" && baseURL == "" {
 			return nil, errors.New("APP_BASE_URL is required in production")
 		}
 		baseURL = "http://localhost:" + port

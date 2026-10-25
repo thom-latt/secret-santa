@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -23,9 +23,74 @@ describe('Secret Santa Frontend', () => {
     })
 
     expect(i18n.global.locale.value).toBe('fr')
+    expect(document.documentElement.lang).toBe('fr')
     await wrapper.get('[data-testid="lang-en"]').trigger('click')
     expect(i18n.global.locale.value).toBe('en')
+    expect(document.documentElement.lang).toBe('en')
     expect(localStorage.getItem('secret_santa_locale')).toBe('en')
+  })
+
+  it('detects initial locale from localStorage then navigator.language with fallback to fr', async () => {
+    const { detectInitialLocale } = await import('../i18n')
+    localStorage.removeItem('secret_santa_locale')
+    const origLang = navigator.language
+    Object.defineProperty(navigator, 'language', { value: 'en-US', configurable: true })
+    expect(detectInitialLocale()).toBe('en')
+
+    Object.defineProperty(navigator, 'language', { value: 'es-ES', configurable: true })
+    expect(detectInitialLocale()).toBe('fr')
+
+    localStorage.setItem('secret_santa_locale', 'en')
+    expect(detectInitialLocale()).toBe('en')
+    Object.defineProperty(navigator, 'language', { value: origLang, configurable: true })
+  })
+
+  it('creates an event with active locale and recovers links from HomeView', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    await router.isReady()
+
+    const pinia = createTestingPinia({ stubActions: true })
+    const configStore = useAppConfigStore(pinia)
+    configStore.allowPublicEventCreation = true
+    vi.mocked(configStore.createEvent).mockResolvedValue({
+      id: 'ev_1',
+      title: 'Xmas 2026',
+      admin_token: 'adm_tok_1',
+    })
+    vi.mocked(configStore.recoverLinks).mockResolvedValue(
+      'If an event is associated with this address, an email has been sent.',
+    )
+
+    setLocale('en')
+    const wrapper = mount(HomeView, {
+      global: {
+        plugins: [pinia, router, i18n],
+      },
+    })
+
+    await wrapper.get('#event-title').setValue('Xmas 2026')
+    await wrapper.get('#org-first-name').setValue('Alice')
+    await wrapper.get('#org-last-name').setValue('Martin')
+    await wrapper.get('#org-email').setValue('alice@example.com')
+    await wrapper.get('[data-testid="create-event-form"]').trigger('submit.prevent')
+
+    expect(configStore.createEvent).toHaveBeenCalledWith({
+      title: 'Xmas 2026',
+      first_name: 'Alice',
+      last_name: 'Martin',
+      email: 'alice@example.com',
+      locale: 'en',
+    })
+
+    const recoverForm = wrapper.get('[data-testid="recover-form"]')
+    await recoverForm.get('input[type="email"]').setValue('alice@example.com')
+    await recoverForm.trigger('submit.prevent')
+
+    expect(configStore.recoverLinks).toHaveBeenCalledWith('alice@example.com', 'en')
+    expect(wrapper.get('[data-testid="recover-message"]').text()).toContain(
+      'If an event is associated with this address',
+    )
   })
 
   it('hides public event creation form when disabled by Super Admin', async () => {
