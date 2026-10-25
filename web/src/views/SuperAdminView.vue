@@ -73,7 +73,7 @@ async function handleInvite() {
     inviteFirstName.value = ''
     inviteLastName.value = ''
     inviteEmail.value = ''
-    statusMessage.value = 'Invitation sent!'
+    statusMessage.value = t('superadmin.invite_sent')
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
   }
@@ -84,10 +84,15 @@ async function handleResendAdmin(eventId: string) {
   statusMessage.value = null
   try {
     await store.resendAdminLink(eventId)
-    statusMessage.value = 'Admin link resent!'
+    statusMessage.value = t('superadmin.admin_link_resent')
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+function formatDateShort(iso: string | null) {
+  if (!iso) return ''
+  return iso.slice(0, 10)
 }
 
 async function confirmDelete() {
@@ -157,6 +162,7 @@ async function confirmDelete() {
           </button>
           <button
             type="button"
+            data-testid="superadmin-logout-btn"
             class="min-h-[44px] rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 cursor-pointer"
             @click="store.logout()"
           >
@@ -165,10 +171,10 @@ async function confirmDelete() {
         </div>
       </div>
 
-      <p v-if="statusMessage" class="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-800 font-medium">
+      <p v-if="statusMessage" data-testid="superadmin-status-message" class="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-800 font-medium">
         {{ statusMessage }}
       </p>
-      <p v-if="actionError" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
+      <p v-if="actionError" data-testid="superadmin-action-error" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
         {{ actionError }}
       </p>
 
@@ -196,6 +202,8 @@ async function confirmDelete() {
             v-model="inviteTitle"
             type="text"
             required
+            autocomplete="off"
+            data-testid="invite-title"
             :placeholder="t('home.event_title')"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
@@ -203,6 +211,8 @@ async function confirmDelete() {
             v-model="inviteFirstName"
             type="text"
             required
+            autocomplete="off"
+            data-testid="invite-first-name"
             :placeholder="t('admin.first_name')"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
@@ -210,6 +220,8 @@ async function confirmDelete() {
             v-model="inviteLastName"
             type="text"
             required
+            autocomplete="off"
+            data-testid="invite-last-name"
             :placeholder="t('admin.last_name')"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
@@ -217,11 +229,14 @@ async function confirmDelete() {
             v-model="inviteEmail"
             type="email"
             required
+            autocomplete="off"
+            data-testid="invite-email"
             :placeholder="t('admin.email')"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <button
             type="submit"
+            data-testid="invite-submit-btn"
             class="min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 cursor-pointer"
           >
             {{ t('superadmin.invite_btn') }}
@@ -235,10 +250,15 @@ async function confirmDelete() {
           {{ t('superadmin.events_title') }} ({{ store.events.length }})
         </h2>
 
-        <div class="space-y-3">
+        <p v-if="store.events.length === 0" data-testid="superadmin-events-empty" class="text-sm text-slate-600">
+          {{ t('superadmin.no_events') }}
+        </p>
+
+        <div v-else class="space-y-3" data-testid="superadmin-events-list">
           <div
             v-for="ev in store.events"
             :key="ev.id"
+            data-testid="superadmin-event-card"
             class="rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
           >
             <div class="space-y-1">
@@ -255,15 +275,17 @@ async function confirmDelete() {
                 {{ ev.organizer_first_name }} {{ ev.organizer_last_name }} ({{ ev.organizer_email }})
               </p>
               <div class="flex flex-wrap gap-3 text-xs text-slate-600 pt-1">
-                <span>{{ t('superadmin.col_participants') }}: <strong>{{ ev.participant_count }}</strong></span>
-                <span>{{ t('superadmin.col_revealed') }}: <strong>{{ ev.revealed_targets_count }}/{{ ev.participant_count }}</strong></span>
-                <span>{{ t('superadmin.col_wishlists') }}: <strong>{{ ev.filled_wishlists_count }}/{{ ev.participant_count }}</strong></span>
+                <span data-testid="event-created-at">{{ t('superadmin.col_created_at') }}: <strong>{{ formatDateShort(ev.created_at) }}</strong></span>
+                <span data-testid="event-participants-count">{{ t('superadmin.col_participants') }}: <strong>{{ ev.participant_count }}</strong></span>
+                <span data-testid="event-revealed-count">{{ t('superadmin.col_revealed') }}: <strong>{{ ev.revealed_targets_count }}/{{ ev.participant_count }}</strong></span>
+                <span data-testid="event-wishlists-count">{{ t('superadmin.col_wishlists') }}: <strong>{{ ev.filled_wishlists_count }}/{{ ev.participant_count }}</strong></span>
               </div>
             </div>
 
             <div class="flex flex-wrap gap-2">
               <button
                 type="button"
+                data-testid="resend-admin-link-btn"
                 class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
                 @click="handleResendAdmin(ev.id)"
               >
@@ -271,6 +293,7 @@ async function confirmDelete() {
               </button>
               <button
                 type="button"
+                data-testid="superadmin-delete-event-btn"
                 class="min-h-[44px] rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 cursor-pointer"
                 @click="deleteCandidateId = ev.id"
               >
@@ -290,6 +313,7 @@ async function confirmDelete() {
         <template #actions>
           <button
             type="button"
+            data-testid="superadmin-cancel-delete-btn"
             class="min-h-[44px] rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 cursor-pointer"
             @click="deleteCandidateId = null"
           >
@@ -297,6 +321,7 @@ async function confirmDelete() {
           </button>
           <button
             type="button"
+            data-testid="superadmin-confirm-delete-btn"
             class="min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white cursor-pointer"
             @click="confirmDelete"
           >

@@ -1049,3 +1049,194 @@ func TestEpic5ParticipantSpaceTargetRevealAndWishlist(t *testing.T) {
 		t.Fatalf("expected 0 emails sent when updating wishlist, got %d", len(env.mailer.SentMessages()))
 	}
 }
+
+func TestEpic6SuperAdminBackOffice(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	// 1. US-6.1: Unauthenticated requests to all protected endpoints return 401
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/superadmin/overview"},
+		{http.MethodPut, "/api/superadmin/settings"},
+		{http.MethodPost, "/api/superadmin/invite"},
+		{http.MethodPost, "/api/superadmin/test-smtp"},
+		{http.MethodPost, "/api/superadmin/events/ev_1/resend-admin"},
+		{http.MethodDelete, "/api/superadmin/events/ev_1"},
+	} {
+		if r := doJSON(t, env.handler, tc.method, tc.path, nil); r.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on unauthenticated %s %s, got %d", tc.method, tc.path, r.Code)
+		}
+	}
+
+	// Forged or expired cookies return 401
+	forgedCookie := &http.Cookie{Name: superAdminCookieName, Value: "9999999999.deadbeef"}
+	if r := doJSON(t, env.handler, http.MethodGet, "/api/superadmin/overview", nil, forgedCookie); r.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 with forged signature cookie, got %d", r.Code)
+	}
+
+	// Login with wrong email or wrong password returns 401
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+		Email: "wrong@example.com", Password: "secret-password-123",
+	}); r.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on wrong email, got %d", r.Code)
+	}
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+		Email: "super@example.com", Password: "wrong-password",
+	}); r.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on wrong password, got %d", r.Code)
+	}
+
+	// Valid login (case-insensitive email) sets HttpOnly, SameSite=Strict, Secure=true (since AppBaseURL is https://) cookie
+	rec := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+		Email:    "  SUPER@EXAMPLE.COM ",
+		Password: "secret-password-123",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on valid login, got %d", rec.Code)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie on login, got %d", len(cookies))
+	}
+	saCookie := cookies[0]
+	if saCookie.Name != superAdminCookieName || !saCookie.HttpOnly || saCookie.SameSite != http.SameSiteStrictMode || !saCookie.Secure {
+		t.Fatalf("unexpected cookie security attributes: %+v", saCookie)
+	}
+
+	// Verify IsSecureCookie behavior for http vs https and development vs production
+	cfgHTTPDev := &config.Config{AppEnv: "development", AppBaseURL: "http://localhost:8080"}
+	if cfgHTTPDev.IsSecureCookie() {
+		t.Fatal("expected Secure=false for http:// in development")
+	}
+	cfgHTTPProd := &config.Config{AppEnv: "production", AppBaseURL: "http://localhost:8080"}
+	if !cfgHTTPProd.IsSecureCookie() {
+		t.Fatal("expected Secure=true in production regardless of scheme")
+	}
+	cfgHTTPSDev := &config.Config{AppEnv: "development", AppBaseURL: "https://santa.local"}
+	if !cfgHTTPSDev.IsSecureCookie() {
+		t.Fatal("expected Secure=true when APP_BASE_URL uses https://")
+	}
+
+	// 2. US-6.2: Toggle public event creation OFF and ON, persisted in app_settings
+	rec = doJSON(t, env.handler, http.MethodPut, "/api/superadmin/settings", SuperAdminSettingsRequest{
+		AllowPublicEventCreation: false,
+	}, saCookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on disable public creation, got %d", rec.Code)
+	}
+	var pubCfg PublicConfigDTO
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodGet, "/api/public/config", nil).Body.Bytes(), &pubCfg)
+	if pubCfg.AllowPublicEventCreation {
+		t.Fatal("expected allow_public_event_creation=false on public config")
+	}
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title: "Public Blocked", FirstName: "A", LastName: "B", Email: "a@example.com",
+	}); r.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 on public event creation when disabled, got %d", r.Code)
+	}
+
+	// 3. US-6.3: Invite an organizer while public creation is disabled
+	env.mailer.Reset()
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/superadmin/invite", CreateEventRequest{
+		Title:     "Famille Martin",
+		FirstName: "Claire",
+		LastName:  "Martin",
+		Email:     "CLAIRE@EXAMPLE.COM",
+		Locale:    "fr",
+	}, saCookie)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on invite organizer, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var invited CreateEventResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &invited)
+	if invited.ID == "" || invited.AdminToken == "" {
+		t.Fatalf("expected event ID and admin_token in invite response, got %+v", invited)
+	}
+	msgs := env.mailer.SentMessages()
+	if len(msgs) != 1 || msgs[0].To != "claire@example.com" || !strings.Contains(msgs[0].Body, "/admin/events/"+invited.AdminToken) || !strings.Contains(msgs[0].Body, "Un administrateur vous invite") {
+		t.Fatalf("expected French invitation email with admin magic link, got %+v", msgs)
+	}
+
+	// Add 2 more participants to Claire's event, run draw, reveal 1 target, and add 1 wishlist item
+	for _, p := range []UpsertParticipantRequest{
+		{FirstName: "David", LastName: "Martin", Email: "david@example.com"},
+		{FirstName: "Emma", LastName: "Martin", Email: "emma@example.com"},
+	} {
+		doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+invited.AdminToken+"/participants", p)
+	}
+	var claireAdminEv AdminEventResponseDTO
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+invited.AdminToken+"/draw", nil).Body.Bytes(), &claireAdminEv)
+	clairePartTok := claireAdminEv.OrganizerParticipantToken
+	doJSON(t, env.handler, http.MethodPost, "/api/p/"+clairePartTok+"/reveal", nil)
+	doJSON(t, env.handler, http.MethodPost, "/api/p/"+clairePartTok+"/wishlist", UpsertWishlistItemRequest{
+		Title: "Parfum",
+	})
+
+	// 4. US-6.4: Global events overview, privacy guarantee, SMTP test, resend admin link, and delete event
+	rec = doJSON(t, env.handler, http.MethodGet, "/api/superadmin/overview", nil, saCookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on overview, got %d", rec.Code)
+	}
+	rawOverview := rec.Body.String()
+	for _, forbidden := range []string{"assigned_to", "admin_token", "participant_token"} {
+		if strings.Contains(rawOverview, forbidden) {
+			t.Fatalf("PRIVACY/SECURITY LEAK: superadmin overview contains %q: %s", forbidden, rawOverview)
+		}
+	}
+	var overview SuperAdminOverviewDTO
+	_ = json.Unmarshal(rec.Body.Bytes(), &overview)
+	if overview.AllowPublicEventCreation || overview.SuperAdminEmail != "super@example.com" || len(overview.Events) != 1 {
+		t.Fatalf("unexpected overview payload: %+v", overview)
+	}
+	evSum := overview.Events[0]
+	if evSum.ID != invited.ID || evSum.Title != "Famille Martin" || evSum.OrganizerFirstName != "Claire" || evSum.OrganizerLastName != "Martin" || evSum.OrganizerEmail != "claire@example.com" || evSum.Status != "drawn" || evSum.ParticipantCount != 3 || evSum.RevealedTargetsCount != 1 || evSum.FilledWishlistsCount != 1 {
+		t.Fatalf("unexpected event summary metrics in superadmin overview: %+v", evSum)
+	}
+
+	// Test SMTP button (success & failure)
+	env.mailer.Reset()
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/superadmin/test-smtp", nil, saCookie)
+	if rec.Code != http.StatusOK || len(env.mailer.SentMessages()) != 1 || env.mailer.SentMessages()[0].To != "super@example.com" {
+		t.Fatalf("expected 200 and test email sent to super@example.com, got code=%d msgs=%+v", rec.Code, env.mailer.SentMessages())
+	}
+	env.mailer.SetFailFor("super@example.com", errors.New("smtp auth error"))
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/test-smtp", nil, saCookie); r.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 when SMTP test fails, got %d", r.Code)
+	}
+	env.mailer.SetFailFor("super@example.com", nil)
+
+	// Resend organizer admin link
+	env.mailer.Reset()
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/superadmin/events/"+invited.ID+"/resend-admin", nil, saCookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on resend-admin, got %d", rec.Code)
+	}
+	if len(env.mailer.SentMessages()) != 1 || !strings.Contains(env.mailer.SentMessages()[0].Body, "/admin/events/"+invited.AdminToken) {
+		t.Fatalf("expected resent admin link email, got %+v", env.mailer.SentMessages())
+	}
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/events/non-existent/resend-admin", nil, saCookie); r.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on resend-admin for unknown event, got %d", r.Code)
+	}
+
+	// Delete event from Super Admin back-office (cascades in SQLite)
+	rec = doJSON(t, env.handler, http.MethodDelete, "/api/superadmin/events/"+invited.ID, nil, saCookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on superadmin delete event, got %d", rec.Code)
+	}
+	if r := doJSON(t, env.handler, http.MethodDelete, "/api/superadmin/events/"+invited.ID, nil, saCookie); r.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on deleting already-deleted event, got %d", r.Code)
+	}
+
+	// Logout clears session cookie
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/superadmin/logout", nil, saCookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on logout, got %d", rec.Code)
+	}
+	logoutCookies := rec.Result().Cookies()
+	if len(logoutCookies) != 1 || logoutCookies[0].MaxAge != -1 || logoutCookies[0].Value != "" {
+		t.Fatalf("expected cleared cookie with MaxAge=-1 on logout, got %+v", logoutCookies)
+	}
+}

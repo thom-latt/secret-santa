@@ -7,9 +7,11 @@ import LangSwitcher from '../components/LangSwitcher.vue'
 import HomeView from '../views/HomeView.vue'
 import EventAdminView from '../views/EventAdminView.vue'
 import ParticipantView from '../views/ParticipantView.vue'
+import SuperAdminView from '../views/SuperAdminView.vue'
 import { useAppConfigStore } from '../stores/appConfig'
 import { useEventAdminStore } from '../stores/eventAdmin'
 import { useParticipantStore } from '../stores/participant'
+import { useSuperAdminStore } from '../stores/superAdmin'
 import { routes } from '../router'
 
 describe('Secret Santa Frontend', () => {
@@ -675,5 +677,125 @@ describe('Secret Santa Frontend', () => {
     // Delete own wishlist item
     await wrapper.get('[data-testid="delete-wishlist-btn"]').trigger('click')
     expect(partStore.deleteWishlistItem).toHaveBeenCalledWith('tok_epic5', 'ow1')
+  })
+
+  it('handles SuperAdminView login, public creation switch, organizer invitation, SMTP test, event list metrics, admin link resend, and event deletion (Epic 6)', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/superadmin')
+    await router.isReady()
+
+    const pinia = createTestingPinia({ stubActions: true })
+    const saStore = useSuperAdminStore(pinia)
+    saStore.authenticated = false
+
+    const wrapper = mount(SuperAdminView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+
+    // 1. US-6.1: Unauthenticated login form & error handling
+    const loginForm = wrapper.get('[data-testid="superadmin-login-form"]')
+    const loginInputs = loginForm.findAll('input')
+    await loginInputs[0].setValue('super@example.com')
+    await loginInputs[1].setValue('wrong')
+    vi.mocked(saStore.login).mockRejectedValueOnce(new Error('invalid credentials'))
+    await loginForm.trigger('submit.prevent')
+    expect(wrapper.text()).toContain('invalid credentials')
+
+    // Valid login transitions to authenticated back-office
+    vi.mocked(saStore.login).mockImplementationOnce(async () => {
+      saStore.authenticated = true
+      saStore.superAdminEmail = 'super@example.com'
+      saStore.allowPublicEventCreation = true
+      saStore.events = [
+        {
+          id: 'ev_sa_1',
+          title: 'Noël Famille 2026',
+          organizer_first_name: 'Claire',
+          organizer_last_name: 'Martin',
+          organizer_email: 'claire@example.com',
+          status: 'drawn',
+          locale: 'fr',
+          created_at: '2026-10-25T10:15:00Z',
+          drawn_at: '2026-10-25T11:00:00Z',
+          participant_count: 6,
+          revealed_targets_count: 4,
+          filled_wishlists_count: 5,
+        },
+      ]
+    })
+    await loginInputs[1].setValue('secret-password-123')
+    await loginForm.trigger('submit.prevent')
+    expect(saStore.login).toHaveBeenCalledWith('super@example.com', 'secret-password-123')
+
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="superadmin-login-form"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('super@example.com')
+
+    // 2. US-6.2: Toggle public event creation switch
+    const toggleBtn = wrapper.get('[data-testid="toggle-public-creation"]')
+    expect(toggleBtn.attributes('aria-checked')).toBe('true')
+    expect(toggleBtn.text()).toBe('ON')
+
+    vi.mocked(saStore.togglePublicCreation).mockImplementationOnce(async (allow: boolean) => {
+      saStore.allowPublicEventCreation = allow
+    })
+    await toggleBtn.trigger('click')
+    expect(saStore.togglePublicCreation).toHaveBeenCalledWith(false)
+    await wrapper.vm.$nextTick()
+    expect(toggleBtn.attributes('aria-checked')).toBe('false')
+    expect(toggleBtn.text()).toBe('OFF')
+
+    // 3. US-6.3: Invite an organizer
+    await wrapper.get('[data-testid="invite-title"]').setValue('Secret Santa Amis')
+    await wrapper.get('[data-testid="invite-first-name"]').setValue('Paul')
+    await wrapper.get('[data-testid="invite-last-name"]').setValue('Bernard')
+    await wrapper.get('[data-testid="invite-email"]').setValue('paul@example.com')
+    await wrapper.get('[data-testid="invite-organizer-form"]').trigger('submit.prevent')
+
+    expect(saStore.inviteOrganizer).toHaveBeenCalledWith({
+      title: 'Secret Santa Amis',
+      first_name: 'Paul',
+      last_name: 'Bernard',
+      email: 'paul@example.com',
+      locale: 'fr',
+    })
+    expect(wrapper.get('[data-testid="superadmin-status-message"]').text()).toContain(
+      'Invitation envoyée !',
+    )
+
+    // 4. US-6.4: Global events view metrics, SMTP test, resend admin link, and delete event with confirmation
+    const card = wrapper.get('[data-testid="superadmin-event-card"]')
+    expect(card.text()).toContain('Noël Famille 2026')
+    expect(card.text()).toContain('Claire Martin (claire@example.com)')
+    expect(card.get('[data-testid="event-created-at"]').text()).toContain('2026-10-25')
+    expect(card.get('[data-testid="event-participants-count"]').text()).toContain('6')
+    expect(card.get('[data-testid="event-revealed-count"]').text()).toContain('4/6')
+    expect(card.get('[data-testid="event-wishlists-count"]').text()).toContain('5/6')
+
+    // SMTP test
+    vi.mocked(saStore.testSmtp).mockResolvedValueOnce('test email sent successfully')
+    await wrapper.get('[data-testid="test-smtp-btn"]').trigger('click')
+    expect(saStore.testSmtp).toHaveBeenCalled()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="superadmin-status-message"]').text()).toBe(
+      'test email sent successfully',
+    )
+
+    // Resend admin link
+    await wrapper.get('[data-testid="resend-admin-link-btn"]').trigger('click')
+    expect(saStore.resendAdminLink).toHaveBeenCalledWith('ev_sa_1')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="superadmin-status-message"]').text()).toContain(
+      "Lien d'administration renvoyé !",
+    )
+
+    // Delete event via confirmation modal
+    await wrapper.get('[data-testid="superadmin-delete-event-btn"]').trigger('click')
+    await wrapper.get('[data-testid="superadmin-confirm-delete-btn"]').trigger('click')
+    expect(saStore.deleteEvent).toHaveBeenCalledWith('ev_sa_1')
+
+    // Logout
+    await wrapper.get('[data-testid="superadmin-logout-btn"]').trigger('click')
+    expect(saStore.logout).toHaveBeenCalled()
   })
 })

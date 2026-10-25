@@ -109,11 +109,15 @@
     "events_title": "Tous les événements hébergés",
     "col_title": "Titre",
     "col_organizer": "Organisateur",
+    "col_created_at": "Créé le",
     "col_status": "Statut",
     "col_participants": "Participants",
     "col_revealed": "Cibles découvertes",
     "col_wishlists": "Listes remplies",
-    "resend_admin_link": "Renvoyer lien admin"
+    "resend_admin_link": "Renvoyer lien admin",
+    "invite_sent": "Invitation envoyée !",
+    "admin_link_resent": "Lien d'administration renvoyé !",
+    "no_events": "Aucun événement hébergé pour le moment."
   },
   "common": {
     "not_found": "Page ou lien introuvable (404)",

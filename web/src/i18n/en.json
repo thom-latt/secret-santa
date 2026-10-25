@@ -109,11 +109,15 @@
     "events_title": "All Hosted Events",
     "col_title": "Title",
     "col_organizer": "Organizer",
+    "col_created_at": "Created",
     "col_status": "Status",
     "col_participants": "Participants",
     "col_revealed": "Revealed targets",
     "col_wishlists": "Filled wishlists",
-    "resend_admin_link": "Resend admin link"
+    "resend_admin_link": "Resend admin link",
+    "invite_sent": "Invitation sent!",
+    "admin_link_resent": "Administration link resent!",
+    "no_events": "No hosted events yet."
   },
   "common": {
     "not_found": "Page or link not found (404)",
