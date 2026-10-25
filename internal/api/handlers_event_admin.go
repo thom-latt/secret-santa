@@ -23,9 +23,11 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 
 	partDTOs := make([]AdminParticipantDTO, 0, len(participants))
 	partIDs := make([]string, 0, len(participants))
+	nameByID := make(map[string]string, len(participants))
 	var orgToken string
 	for _, p := range participants {
 		partIDs = append(partIDs, p.ID)
+		nameByID[p.ID] = strings.TrimSpace(p.FirstName + " " + p.LastName)
 		if p.IsOrganizer && ev.Status == "drawn" {
 			orgToken = p.ParticipantToken
 		}
@@ -61,15 +63,19 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 		}
 	} else {
 		res, solveErr := draw.Solve(partIDs, exPairs)
+		diag := res.Diagnostic
+		for id, name := range nameByID {
+			diag = strings.ReplaceAll(diag, id, name)
+		}
 		if solveErr != nil {
 			feas = FeasibilityDTO{
 				Mode:       string(draw.ModeImpossible),
-				Diagnostic: res.Diagnostic,
+				Diagnostic: diag,
 			}
 		} else {
 			feas = FeasibilityDTO{
 				Mode:       string(res.Mode),
-				Diagnostic: res.Diagnostic,
+				Diagnostic: diag,
 			}
 		}
 	}
@@ -441,8 +447,10 @@ func (s *Server) handleDrawEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	partIDs := make([]string, len(participants))
+	nameByID := make(map[string]string, len(participants))
 	for i, p := range participants {
 		partIDs[i] = p.ID
+		nameByID[p.ID] = strings.TrimSpace(p.FirstName + " " + p.LastName)
 	}
 	exPairs := make([]draw.ExclusionPair, len(exclusions))
 	for i, ex := range exclusions {
@@ -451,7 +459,11 @@ func (s *Server) handleDrawEvent(w http.ResponseWriter, r *http.Request) {
 
 	res, solveErr := draw.Solve(partIDs, exPairs)
 	if solveErr != nil {
-		writeError(w, http.StatusUnprocessableEntity, res.Diagnostic)
+		diag := res.Diagnostic
+		for id, name := range nameByID {
+			diag = strings.ReplaceAll(diag, id, name)
+		}
+		writeError(w, http.StatusUnprocessableEntity, diag)
 		return
 	}
 

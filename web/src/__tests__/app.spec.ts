@@ -5,8 +5,10 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { i18n, setLocale } from '../i18n'
 import LangSwitcher from '../components/LangSwitcher.vue'
 import HomeView from '../views/HomeView.vue'
+import EventAdminView from '../views/EventAdminView.vue'
 import ParticipantView from '../views/ParticipantView.vue'
 import { useAppConfigStore } from '../stores/appConfig'
+import { useEventAdminStore } from '../stores/eventAdmin'
 import { useParticipantStore } from '../stores/participant'
 import { routes } from '../router'
 
@@ -167,5 +169,141 @@ describe('Secret Santa Frontend', () => {
     expect(wrapper.find('[data-testid="discover-btn"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="target-full-name"]').text()).toBe('Bob Dupont')
     expect(wrapper.get('[data-testid="target-wishlist"]').text()).toContain('Livre SF')
+  })
+
+  it('renders 404 on invalid adminToken and manages draft event in EventAdminView (Epic 2)', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/admin/events/adm_tok_123')
+    await router.isReady()
+
+    const pinia = createTestingPinia({ stubActions: true })
+    const adminStore = useEventAdminStore(pinia)
+
+    // US-2.1: 404 view when token is invalid
+    adminStore.notFound = true
+    const wrapper404 = mount(EventAdminView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+    expect(wrapper404.find('[data-testid="not-found"]').exists()).toBe(true)
+
+    // US-2.1, US-2.2, US-2.3, US-2.4, US-2.5: Valid draft event
+    adminStore.notFound = false
+    adminStore.event = {
+      id: 'ev_1',
+      title: 'Noël 2026',
+      description: 'Soirée',
+      event_date: '2026-12-25',
+      budget: '25 €',
+      organizer_first_name: 'Alice',
+      organizer_last_name: 'Martin',
+      organizer_email: 'alice@example.com',
+      organizer_participates: true,
+      status: 'draft',
+      locale: 'fr',
+      created_at: '2026-10-25T12:00:00Z',
+      drawn_at: null,
+      participants: [
+        {
+          id: 'p1',
+          first_name: 'Alice',
+          last_name: 'Martin',
+          email: 'alice@example.com',
+          is_organizer: true,
+          link_clicked_at: null,
+          email_sent_at: null,
+          email_error: null,
+          wishlist_count: 0,
+        },
+        {
+          id: 'p2',
+          first_name: 'Bob',
+          last_name: 'Dupont',
+          email: 'bob@example.com',
+          is_organizer: false,
+          link_clicked_at: null,
+          email_sent_at: null,
+          email_error: null,
+          wishlist_count: 0,
+        },
+        {
+          id: 'p3',
+          first_name: 'Charlie',
+          last_name: 'Durand',
+          email: 'charlie@example.com',
+          is_organizer: false,
+          link_clicked_at: null,
+          email_sent_at: null,
+          email_error: null,
+          wishlist_count: 0,
+        },
+      ],
+      exclusions: [{ id: 'ex1', participant_a_id: 'p1', participant_b_id: 'p2' }],
+      feasibility: {
+        mode: 'single_cycle',
+        diagnostic: '',
+      },
+    }
+
+    const wrapper = mount(EventAdminView, {
+      attachTo: document.body,
+      global: { plugins: [pinia, router, i18n] },
+    })
+
+    // Organizer badge & feasibility indicator (single_cycle)
+    expect(wrapper.text()).toContain('Organisateur')
+    expect(wrapper.get('[data-testid="feasibility-badge"]').text()).toContain(
+      'Tirage valide (Chaîne unique)',
+    )
+
+    // US-2.3: Add participant with autocomplete="off" and focus returned to First Name input
+    const addForm = wrapper.get('[data-testid="add-participant-form"]')
+    const inputs = addForm.findAll('input')
+    expect(inputs[0].attributes('autocomplete')).toBe('off')
+    expect(inputs[1].attributes('autocomplete')).toBe('off')
+    expect(inputs[2].attributes('autocomplete')).toBe('off')
+
+    await inputs[0].setValue('Diane')
+    await inputs[1].setValue('Moreau')
+    await inputs[2].setValue('diane@example.com')
+    await addForm.trigger('submit.prevent')
+
+    expect(adminStore.addParticipant).toHaveBeenCalledWith('adm_tok_123', {
+      first_name: 'Diane',
+      last_name: 'Moreau',
+      email: 'diane@example.com',
+    })
+    expect(document.activeElement).toBe(inputs[0].element)
+
+    // US-2.4: Exclusion selector prevents selecting same participant or already excluded pair (p1 <-> p2)
+    const selectA = wrapper.get('[data-testid="exclusion-select-a"]')
+    const selectB = wrapper.get('[data-testid="exclusion-select-b"]')
+    await selectA.setValue('p1')
+    const optionsB = selectB.findAll('option')
+    // option 0 is placeholder, option 1 is p1 (self), option 2 is p2 (already excluded with p1), option 3 is p3 (allowed)
+    expect(optionsB[1].attributes('disabled')).toBeDefined()
+    expect(optionsB[2].attributes('disabled')).toBeDefined()
+    expect(optionsB[3].attributes('disabled')).toBeUndefined()
+
+    await selectB.setValue('p3')
+    await wrapper.get('[data-testid="add-exclusion-form"]').trigger('submit.prevent')
+    expect(adminStore.addExclusion).toHaveBeenCalledWith('adm_tok_123', 'p1', 'p3')
+
+    // US-2.5: Verify sub_loops and impossible feasibility states
+    adminStore.event.feasibility = { mode: 'sub_loops', diagnostic: '' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="feasibility-badge"]').text()).toContain(
+      'Tirage valide (Sous-boucles de 3+ personnes)',
+    )
+
+    adminStore.event.feasibility = {
+      mode: 'impossible',
+      diagnostic: 'Participant Alice Martin has fewer than 2 allowed partners',
+    }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="feasibility-badge"]').text()).toContain('Tirage impossible')
+    expect(wrapper.get('[data-testid="feasibility-badge"]').text()).toContain('Alice Martin')
+    expect(wrapper.get('[data-testid="launch-draw-btn"]').attributes('disabled')).toBeDefined()
+
+    wrapper.unmount()
   })
 })

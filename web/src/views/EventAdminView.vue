@@ -77,6 +77,15 @@ function participantName(id: string): string {
   return p ? `${p.first_name} ${p.last_name}` : id
 }
 
+function isPairExcluded(idA: string, idB: string): boolean {
+  if (!idA || !idB || !store.event) return false
+  return store.event.exclusions.some(
+    (ex) =>
+      (ex.participant_a_id === idA && ex.participant_b_id === idB) ||
+      (ex.participant_a_id === idB && ex.participant_b_id === idA),
+  )
+}
+
 async function copyAdminLink() {
   try {
     await navigator.clipboard.writeText(window.location.href)
@@ -536,30 +545,43 @@ async function confirmAndDeleteEvent() {
           <span v-else>{{ t('admin.feasibility_too_few') }} ({{ store.event.feasibility.diagnostic }})</span>
         </div>
 
-        <form class="grid grid-cols-1 sm:grid-cols-3 gap-3" @submit.prevent="handleAddExclusion">
+        <form data-testid="add-exclusion-form" class="grid grid-cols-1 sm:grid-cols-3 gap-3" @submit.prevent="handleAddExclusion">
           <select
             v-model="exPartA"
+            data-testid="exclusion-select-a"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
           >
             <option value="">{{ t('admin.select_participant_a') }}</option>
-            <option v-for="p in store.event.participants" :key="p.id" :value="p.id">
+            <option
+              v-for="p in store.event.participants"
+              :key="p.id"
+              :value="p.id"
+              :disabled="p.id === exPartB || isPairExcluded(p.id, exPartB)"
+            >
               {{ p.first_name }} {{ p.last_name }}
             </option>
           </select>
 
           <select
             v-model="exPartB"
+            data-testid="exclusion-select-b"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
           >
             <option value="">{{ t('admin.select_participant_b') }}</option>
-            <option v-for="p in store.event.participants" :key="p.id" :value="p.id" :disabled="p.id === exPartA">
+            <option
+              v-for="p in store.event.participants"
+              :key="p.id"
+              :value="p.id"
+              :disabled="p.id === exPartA || isPairExcluded(exPartA, p.id)"
+            >
               {{ p.first_name }} {{ p.last_name }}
             </option>
           </select>
 
           <button
             type="submit"
-            :disabled="!exPartA || !exPartB || exPartA === exPartB"
+            data-testid="add-exclusion-btn"
+            :disabled="!exPartA || !exPartB || exPartA === exPartB || isPairExcluded(exPartA, exPartB)"
             class="min-h-[44px] rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
           >
             {{ t('admin.add_exclusion_btn') }}

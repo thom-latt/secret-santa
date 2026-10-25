@@ -408,3 +408,119 @@ func TestEndToEndAllUserStories(t *testing.T) {
 		t.Fatal("expected 404 after event deletion")
 	}
 }
+
+func TestEpic2DraftEventAdministration(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	// US-2.1: Unknown adminToken returns 404
+	if rec := doJSON(t, env.handler, http.MethodGet, "/api/admin/events/invalid-token", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on invalid adminToken, got %d", rec.Code)
+	}
+
+	// Create draft event
+	rec := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title:     "Draft Epic 2",
+		FirstName: "Alice",
+		LastName:  "Martin",
+		Email:     "alice@example.com",
+		Locale:    "fr",
+	})
+	var created CreateEventResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	tok := created.AdminToken
+
+	var ev AdminEventResponseDTO
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodGet, "/api/admin/events/"+tok, nil).Body.Bytes(), &ev)
+	if len(ev.Participants) != 1 || !ev.Participants[0].IsOrganizer || ev.Feasibility.Mode != "too_few" {
+		t.Fatalf("unexpected initial draft state: %+v", ev)
+	}
+	orgID := ev.Participants[0].ID
+
+	// US-2.2 & US-2.3: Edit organizer participant in draft mode syncs events.organizer_*
+	rec = doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok+"/participants/"+orgID, UpsertParticipantRequest{
+		FirstName: "Alicia",
+		LastName:  "Martins",
+		Email:     "alicia@example.com",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on draft organizer edit, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.OrganizerFirstName != "Alicia" || ev.OrganizerLastName != "Martins" || ev.OrganizerEmail != "alicia@example.com" {
+		t.Fatalf("expected events.organizer_* synced in draft mode, got %+v", ev)
+	}
+
+	// US-2.3: Add Bob and Charlie, add exclusion between Alicia and Bob, then delete Alicia (organizer row)
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants", UpsertParticipantRequest{
+		FirstName: "Bob", LastName: "Dupont", Email: "bob@example.com",
+	}).Body.Bytes(), &ev)
+	bobID := ev.Participants[1].ID
+
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: orgID, ParticipantBID: bobID,
+	}).Body.Bytes(), &ev)
+	if len(ev.Exclusions) != 1 {
+		t.Fatalf("expected 1 exclusion, got %d", len(ev.Exclusions))
+	}
+
+	// Deleting organizer participant row unchecks organizer_participates and cascades exclusion deletion
+	rec = doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/participants/"+orgID, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on delete organizer participant, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.OrganizerParticipates || len(ev.Participants) != 1 || len(ev.Exclusions) != 0 {
+		t.Fatalf("expected organizer_participates=false, 1 participant, 0 exclusions, got %+v", ev)
+	}
+
+	// US-2.2: Add a regular participant with organizer's email ("alicia@example.com"), then check "organizer_participates = true" -> promotes existing row to is_organizer=true
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants", UpsertParticipantRequest{
+		FirstName: "AliciaTemp", LastName: "Temp", Email: "ALICIA@example.com",
+	}).Body.Bytes(), &ev)
+	if len(ev.Participants) != 2 || ev.Participants[1].IsOrganizer {
+		t.Fatalf("expected non-organizer participant added, got %+v", ev.Participants)
+	}
+	tr := true
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok, UpdateEventRequest{
+		Title:                 "Draft Epic 2",
+		OrganizerParticipates: &tr,
+	}).Body.Bytes(), &ev)
+	if !ev.OrganizerParticipates || len(ev.Participants) != 2 {
+		t.Fatalf("expected 2 participants with promoted organizer, got %+v", ev)
+	}
+	promoted := ev.Participants[1]
+	if !promoted.IsOrganizer || promoted.FirstName != "Alicia" || promoted.LastName != "Martins" {
+		t.Fatalf("expected participant promoted and synced to organizer details, got %+v", promoted)
+	}
+
+	// US-2.4 & US-2.5: Self-exclusion rejected (400), 3 participants with 1 exclusion -> impossible draw with participant name in diagnostic
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: bobID, ParticipantBID: bobID,
+	}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on self-exclusion, got %d", rec.Code)
+	}
+
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants", UpsertParticipantRequest{
+		FirstName: "Charlie", LastName: "Durand", Email: "charlie@example.com",
+	}).Body.Bytes(), &ev)
+	if ev.Feasibility.Mode != "single_cycle" {
+		t.Fatalf("expected single_cycle with 3 participants and 0 exclusions, got %+v", ev.Feasibility)
+	}
+
+	// Exclude Bob <-> Charlie: with N=3, any mutual exclusion leaves Bob and Charlie with only 1 allowed partner (<2)
+	charlieID := ev.Participants[2].ID
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: bobID, ParticipantBID: charlieID,
+	}).Body.Bytes(), &ev)
+	if ev.Feasibility.Mode != "impossible" || !strings.Contains(ev.Feasibility.Diagnostic, "Bob Dupont") {
+		t.Fatalf("expected impossible feasibility mentioning Bob Dupont, got %+v", ev.Feasibility)
+	}
+
+	// Delete the exclusion -> back to single_cycle
+	exID := ev.Exclusions[0].ID
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/exclusions/"+exID, nil).Body.Bytes(), &ev)
+	if len(ev.Exclusions) != 0 || ev.Feasibility.Mode != "single_cycle" {
+		t.Fatalf("expected 0 exclusions and single_cycle after deleting exclusion, got %+v", ev)
+	}
+}
