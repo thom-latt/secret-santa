@@ -41,6 +41,7 @@ const exPartB = ref('')
 // Modals
 const showDrawModal = ref(false)
 const showDeleteModal = ref(false)
+const drawing = ref(false)
 
 function syncFormFromEvent() {
   if (!store.event) return
@@ -191,7 +192,9 @@ async function handleDeleteExclusion(exclusionId: string) {
 }
 
 async function confirmAndExecuteDraw() {
+  if (drawing.value) return
   actionError.value = null
+  drawing.value = true
   showDrawModal.value = false
   try {
     // Save any pending edits in event details first (US-3.1)
@@ -205,6 +208,8 @@ async function confirmAndExecuteDraw() {
     await store.executeDraw(adminToken.value)
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    drawing.value = false
   }
 }
 
@@ -607,15 +612,22 @@ async function confirmAndDeleteEvent() {
       </section>
 
       <!-- Launch Draw Action (Draft Mode) -->
-      <section v-if="store.event.status === 'draft'" class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200">
+      <section v-if="store.event.status === 'draft'" class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200 space-y-3">
+        <p
+          v-if="store.event.participants.length < 3"
+          data-testid="draw-need-more-msg"
+          class="text-sm font-medium text-slate-600"
+        >
+          {{ t('admin.draw_need_more', { count: 3 - store.event.participants.length }) }}
+        </p>
         <button
           type="button"
           data-testid="launch-draw-btn"
-          :disabled="!canLaunchDraw"
+          :disabled="!canLaunchDraw || drawing"
           class="w-full min-h-[44px] rounded-xl bg-red-600 px-6 py-3 text-base font-bold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
           @click="showDrawModal = true"
         >
-          {{ t('admin.draw_btn') }}
+          {{ drawing ? t('admin.drawing') : t('admin.draw_btn') }}
         </button>
       </section>
 

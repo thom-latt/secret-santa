@@ -306,4 +306,109 @@ describe('Secret Santa Frontend', () => {
 
     wrapper.unmount()
   })
+
+  it('handles draw disabled message (<3 participants), confirmation modal, prior detail save, and post-draw locks (Epic 3)', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/admin/events/adm_tok_draw')
+    await router.isReady()
+
+    const pinia = createTestingPinia({ stubActions: true })
+    const adminStore = useEventAdminStore(pinia)
+
+    adminStore.notFound = false
+    adminStore.event = {
+      id: 'ev_draw',
+      title: 'Noël Bureau',
+      description: '',
+      event_date: '',
+      budget: '',
+      organizer_first_name: 'Alice',
+      organizer_last_name: 'Martin',
+      organizer_email: 'alice@example.com',
+      organizer_participates: true,
+      status: 'draft',
+      locale: 'fr',
+      created_at: '2026-10-25T12:00:00Z',
+      drawn_at: null,
+      participants: [
+        {
+          id: 'p1',
+          first_name: 'Alice',
+          last_name: 'Martin',
+          email: 'alice@example.com',
+          is_organizer: true,
+          link_clicked_at: null,
+          email_sent_at: null,
+          email_error: null,
+          wishlist_count: 0,
+        },
+        {
+          id: 'p2',
+          first_name: 'Bob',
+          last_name: 'Dupont',
+          email: 'bob@example.com',
+          is_organizer: false,
+          link_clicked_at: null,
+          email_sent_at: null,
+          email_error: null,
+          wishlist_count: 0,
+        },
+      ],
+      exclusions: [],
+      feasibility: {
+        mode: 'too_few',
+        diagnostic: 'Need 1 more participant(s) (minimum 3)',
+      },
+    }
+
+    const wrapper = mount(EventAdminView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+
+    // With 2 participants, button is disabled and explicit message shows how many more are needed (1)
+    expect(wrapper.get('[data-testid="launch-draw-btn"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="draw-need-more-msg"]').text()).toContain('1')
+
+    // Add 3rd participant and make feasibility valid
+    adminStore.event.participants.push({
+      id: 'p3',
+      first_name: 'Charlie',
+      last_name: 'Durand',
+      email: 'charlie@example.com',
+      is_organizer: false,
+      link_clicked_at: null,
+      email_sent_at: null,
+      email_error: null,
+      wishlist_count: 0,
+    })
+    adminStore.event.feasibility = { mode: 'single_cycle', diagnostic: '' }
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="draw-need-more-msg"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="launch-draw-btn"]').attributes('disabled')).toBeUndefined()
+
+    // Edit budget in form without clicking "Save changes"
+    const budgetInput = wrapper.find('input[placeholder="Ex : 20 €"]')
+    await budgetInput.setValue('35 €')
+
+    // Click Launch Draw -> opens confirmation modal, then confirm -> saves details first then executes draw
+    await wrapper.get('[data-testid="launch-draw-btn"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-draw-btn"]').trigger('click')
+
+    expect(adminStore.updateDetails).toHaveBeenCalledWith('adm_tok_draw', {
+      title: 'Noël Bureau',
+      description: '',
+      event_date: '',
+      budget: '35 €',
+      organizer_participates: true,
+    })
+    expect(adminStore.executeDraw).toHaveBeenCalledWith('adm_tok_draw')
+
+    // Simulate transition to 'drawn' status: add/delete participant and exclusions sections are locked
+    adminStore.event.status = 'drawn'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="add-participant-form"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="add-exclusion-form"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="launch-draw-btn"]').exists()).toBe(false)
+  })
 })

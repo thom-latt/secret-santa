@@ -524,3 +524,107 @@ func TestEpic2DraftEventAdministration(t *testing.T) {
 		t.Fatalf("expected 0 exclusions and single_cycle after deleting exclusion, got %+v", ev)
 	}
 }
+
+func TestEpic3DrawAndInitialEmailSending(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	// Create event in English with organizer participating (1 participant initially)
+	rec := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title:     "Office Secret Santa",
+		FirstName: "Alice",
+		LastName:  "Smith",
+		Email:     "alice@example.com",
+		Locale:    "en",
+	})
+	var created CreateEventResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	tok := created.AdminToken
+
+	// 1. Fewer than 3 participants -> 400 Bad Request
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/draw", nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when drawing with <3 participants, got %d", rec.Code)
+	}
+
+	// Add 2 more participants (total 3)
+	for _, p := range []UpsertParticipantRequest{
+		{FirstName: "Bob", LastName: "Jones", Email: "bob@example.com"},
+		{FirstName: "Carol", LastName: "White", Email: "carol@example.com"},
+	} {
+		if r := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants", p); r.Code != http.StatusCreated {
+			t.Fatalf("add participant failed: %d", r.Code)
+		}
+	}
+
+	// Update event details prior to draw
+	tr := true
+	doJSON(t, env.handler, http.MethodPut, "/api/admin/events/"+tok, UpdateEventRequest{
+		Title:                 "Office Secret Santa 2026",
+		EventDate:             "2026-12-20",
+		Budget:                "$30",
+		Description:           "Meet by the tree at 6pm",
+		OrganizerParticipates: &tr,
+	})
+
+	// 2. Execute draw with 1 simulated SMTP failure (bob@example.com)
+	env.mailer.Reset()
+	env.mailer.SetFailFor("bob@example.com", errors.New("smtp timeout after 5s"))
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/draw", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on draw, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var ev AdminEventResponseDTO
+	_ = json.Unmarshal(rec.Body.Bytes(), &ev)
+	if ev.Status != "drawn" || ev.DrawnAt == nil {
+		t.Fatalf("expected status='drawn' and non-nil drawn_at, got %+v", ev)
+	}
+
+	// Verify personalized emails sent to Alice and Carol, and error recorded for Bob
+	msgs := env.mailer.SentMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 successful emails sent, got %d", len(msgs))
+	}
+	for _, m := range msgs {
+		for _, want := range []string{"Office Secret Santa 2026", "2026-12-20", "$30", "Meet by the tree at 6pm", "https://santa.example.com/p/"} {
+			if !strings.Contains(m.Body, want) {
+				t.Fatalf("email to %s missing %q:\n%s", m.To, want, m.Body)
+			}
+		}
+	}
+
+	for _, p := range ev.Participants {
+		if p.Email == "bob@example.com" {
+			if p.EmailSentAt != nil || p.EmailError == nil || !strings.Contains(*p.EmailError, "smtp timeout") {
+				t.Fatalf("expected bob email_error recorded, got %+v", p)
+			}
+		} else {
+			if p.EmailSentAt == nil || p.EmailError != nil {
+				t.Fatalf("expected %s email_sent_at set and nil error, got %+v", p.Email, p)
+			}
+		}
+	}
+
+	// 3. Double-click idempotency -> 409 Conflict
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/draw", nil); rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 on double draw, got %d", rec.Code)
+	}
+
+	// 4. Permanent locking of participant add/delete and exclusion add/delete after draw -> 409 Conflict
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/participants", UpsertParticipantRequest{
+		FirstName: "Dave", LastName: "Black", Email: "dave@example.com",
+	}); rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when adding participant after draw, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/participants/"+ev.Participants[0].ID, nil); rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when deleting participant after draw, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: ev.Participants[0].ID, ParticipantBID: ev.Participants[1].ID,
+	}); rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when adding exclusion after draw, got %d", rec.Code)
+	}
+	if rec := doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/exclusions/any-id", nil); rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when deleting exclusion after draw, got %d", rec.Code)
+	}
+}
