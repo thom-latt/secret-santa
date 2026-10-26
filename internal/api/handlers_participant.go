@@ -145,6 +145,9 @@ func validateAndNormalizeWishlistInput(title, rawURL, note string) (string, stri
 	}
 
 	if rawURL != "" {
+		if utf8.RuneCountInString(rawURL) > 2048 || strings.IndexFunc(rawURL, func(r rune) bool { return r < 0x20 || r == 0x7f }) != -1 {
+			return "", "", "", errors.New("invalid URL")
+		}
 		lower := strings.ToLower(rawURL)
 		if strings.Contains(lower, ":") && !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 			// Check if the colon is before the first slash (i.e., a non-http scheme like javascript: or data:)
@@ -158,7 +161,7 @@ func validateAndNormalizeWishlistInput(title, rawURL, note string) (string, stri
 			rawURL = "https://" + rawURL
 		}
 		parsed, err := url.Parse(rawURL)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
 			return "", "", "", errors.New("invalid URL")
 		}
 	}
@@ -179,6 +182,10 @@ func (s *Server) handleAddWishlistItem(w http.ResponseWriter, r *http.Request) {
 	}
 	if ev.Status != "drawn" {
 		writeError(w, http.StatusNotFound, "draw has not taken place yet")
+		return
+	}
+	if p.WishlistCount >= 50 {
+		writeError(w, http.StatusBadRequest, "maximum of 50 wishlist items reached")
 		return
 	}
 

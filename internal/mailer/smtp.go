@@ -137,12 +137,14 @@ func sendOnClient(client *smtp.Client, fromHeader, fromAddr, toAddr string, msg 
 		return fmt.Errorf("smtp DATA: %w", err)
 	}
 
+	cleanFrom := strings.ReplaceAll(strings.ReplaceAll(fromHeader, "\r", ""), "\n", " ")
+	cleanTo := strings.ReplaceAll(strings.ReplaceAll(toAddr, "\r", ""), "\n", "")
 	cleanSubject := strings.ReplaceAll(strings.ReplaceAll(msg.Subject, "\r", ""), "\n", " ")
 	encodedSubject := mime.QEncoding.Encode("utf-8", cleanSubject)
 	dateHeader := time.Now().UTC().Format(time.RFC1123Z)
 	payload := fmt.Sprintf(
 		"Date: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
-		dateHeader, fromHeader, toAddr, encodedSubject, msg.Body,
+		dateHeader, cleanFrom, cleanTo, encodedSubject, msg.Body,
 	)
 
 	if _, err := w.Write([]byte(payload)); err != nil {

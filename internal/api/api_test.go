@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1428,5 +1429,68 @@ func TestEpic7EmailSecurityAndPersistence(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &aliceSpaceAfter)
 	if !aliceSpaceAfter.Revealed || aliceSpaceAfter.Target == nil || len(aliceSpaceAfter.OwnWishlist) != 1 || aliceSpaceAfter.OwnWishlist[0].Title != "Disque dur NAS 8 To" {
 		t.Fatalf("unexpected participant space state after restart: %+v", aliceSpaceAfter)
+	}
+
+	// Verify restrictive permissions on SQLite DB file (0600)
+	if fi, err := os.Stat(dbFile); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("expected 0600 permissions on sqlite db file, got mode=%v err=%v", fi.Mode().Perm(), err)
+	}
+}
+
+func TestSecurityHardening(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	// 1. CSP, HSTS, and Cache-Control: no-store headers on API responses
+	rec := doJSON(t, env.handler, http.MethodGet, "/api/public/config", nil)
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected Cache-Control: no-store, got %q", got)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'self'") {
+		t.Fatalf("expected Content-Security-Policy header, got %q", got)
+	}
+	if got := rec.Header().Get("Strict-Transport-Security"); !strings.Contains(got, "max-age=") {
+		t.Fatalf("expected Strict-Transport-Security header, got %q", got)
+	}
+
+	// 2. Cross-Origin (CSRF) protection rejects cross-site POST requests
+	csrfReq := httptest.NewRequest(http.MethodPost, "/api/superadmin/logout", nil)
+	csrfReq.Header.Set("Sec-Fetch-Site", "cross-site")
+	csrfRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(csrfRec, csrfReq)
+	if csrfRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 on cross-site POST (CSRF), got %d", csrfRec.Code)
+	}
+
+	// 3. Server-side Super Admin session revocation on logout
+	loginRec := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+		Email: "super@example.com", Password: "secret-password-123",
+	})
+	saCookie := loginRec.Result().Cookies()[0]
+	if saCookie.Path != "/api/superadmin" {
+		t.Fatalf("expected cookie Path=/api/superadmin, got %q", saCookie.Path)
+	}
+	doJSON(t, env.handler, http.MethodPost, "/api/superadmin/logout", nil, saCookie)
+	if r := doJSON(t, env.handler, http.MethodGet, "/api/superadmin/overview", nil, saCookie); r.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when replaying Super Admin cookie after logout, got %d", r.Code)
+	}
+
+	// 4. Input length & control-char bounds
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/events", CreateEventRequest{
+		Title: strings.Repeat("x", 201), FirstName: "A", LastName: "B", Email: "a@example.com",
+	}); r.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on oversized event title, got %d", r.Code)
+	}
+
+	// 5. Brute-force rate limit on Super Admin login (10 failures -> 429)
+	for i := 0; i < 10; i++ {
+		doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+			Email: "super@example.com", Password: "wrong",
+		})
+	}
+	if r := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{
+		Email: "super@example.com", Password: "secret-password-123",
+	}); r.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after 10 failed login attempts, got %d", r.Code)
 	}
 }

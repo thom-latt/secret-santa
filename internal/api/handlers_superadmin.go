@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,7 +20,8 @@ import (
 const superAdminCookieName = "secret_santa_superadmin"
 
 func (s *Server) signSuperAdminToken(expUnix int64) string {
-	payload := fmt.Sprintf("superadmin:%d", expUnix)
+	emailNorm := strings.ToLower(strings.TrimSpace(s.cfg.SuperAdminEmail))
+	payload := fmt.Sprintf("superadmin:%d:%d:%s:%s", expUnix, s.sessionEpoch.Load(), emailNorm, s.cfg.SuperAdminPassword)
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 	_, _ = mac.Write([]byte(payload))
 	sig := hex.EncodeToString(mac.Sum(nil))
@@ -56,7 +58,44 @@ func (s *Server) requireSuperAdmin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (s *Server) checkLoginRateLimit(ip string) bool {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	cutoff := time.Now().Add(-1 * time.Minute)
+	recent := s.loginAttempts[ip][:0]
+	for _, t := range s.loginAttempts[ip] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) == 0 {
+		delete(s.loginAttempts, ip)
+	} else {
+		s.loginAttempts[ip] = recent
+	}
+	return len(recent) < 10
+}
+
+func (s *Server) recordLoginFailure(ip string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	s.loginAttempts[ip] = append(s.loginAttempts[ip], time.Now())
+}
+
+func clientIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
 func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if !s.checkLoginRateLimit(ip) {
+		writeError(w, http.StatusTooManyRequests, "too many login attempts, please try again later")
+		return
+	}
+
 	var req SuperAdminLoginRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -73,6 +112,7 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	passMatch := subtle.ConstantTimeCompare(inputPassHash[:], expectedPassHash[:])
 
 	if emailMatch != 1 || passMatch != 1 {
+		s.recordLoginFailure(ip)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -81,7 +121,7 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     superAdminCookieName,
 		Value:    s.signSuperAdminToken(exp),
-		Path:     "/",
+		Path:     "/api/superadmin",
 		HttpOnly: true,
 		Secure:   s.cfg.IsSecureCookie(),
 		SameSite: http.SameSiteStrictMode,
@@ -92,10 +132,11 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSuperAdminLogout(w http.ResponseWriter, r *http.Request) {
+	s.sessionEpoch.Add(1)
 	http.SetCookie(w, &http.Cookie{
 		Name:     superAdminCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     "/api/superadmin",
 		HttpOnly: true,
 		Secure:   s.cfg.IsSecureCookie(),
 		SameSite: http.SameSiteStrictMode,
@@ -165,7 +206,7 @@ func (s *Server) handleSuperAdminInviteOrganizer(w http.ResponseWriter, r *http.
 	req.LastName = strings.TrimSpace(req.LastName)
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	if req.Title == "" || req.FirstName == "" || req.LastName == "" || !isValidEmail(req.Email) {
+	if !isValidTextLen(req.Title, 1, 200) || !isValidTextLen(req.FirstName, 1, 100) || !isValidTextLen(req.LastName, 1, 100) || !isValidEmail(req.Email) {
 		writeError(w, http.StatusBadRequest, "title, first_name, last_name, and a valid email are required")
 		return
 	}

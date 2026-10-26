@@ -39,7 +39,7 @@ func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request)
 	req.LastName = strings.TrimSpace(req.LastName)
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	if req.Title == "" || req.FirstName == "" || req.LastName == "" || !isValidEmail(req.Email) {
+	if !isValidTextLen(req.Title, 1, 200) || !isValidTextLen(req.FirstName, 1, 100) || !isValidTextLen(req.LastName, 1, 100) || !isValidEmail(req.Email) {
 		writeError(w, http.StatusBadRequest, "title, first_name, last_name, and a valid email are required")
 		return
 	}

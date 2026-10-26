@@ -90,8 +90,11 @@ func Load() (*Config, error) {
 	}
 
 	if appEnv == "production" {
-		if cfg.SuperAdminPassword == "" || cfg.SuperAdminPassword == "admin" || cfg.SuperAdminPassword == "change-me-in-production" {
-			return nil, errors.New("SUPER_ADMIN_PASSWORD must be changed in production")
+		if len(cfg.SuperAdminPassword) < 12 || cfg.SuperAdminPassword == "admin" || cfg.SuperAdminPassword == "change-me-in-production" {
+			return nil, errors.New("SUPER_ADMIN_PASSWORD must be changed and at least 12 characters in production")
+		}
+		if len(cfg.SessionSecret) < 32 || cfg.SessionSecret == "change-me-32-bytes-minimum-secret-key" {
+			return nil, errors.New("SESSION_SECRET must be changed and at least 32 characters in production")
 		}
 		if cfg.SMTPHost == "" {
 			return nil, errors.New("SMTP_HOST is required in production")

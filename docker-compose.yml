@@ -11,14 +11,17 @@ services:
       dockerfile: Dockerfile
     container_name: secret-santa
     restart: unless-stopped
-    # Expose HTTP port to host / reverse proxy (Nginx)
+    # Expose HTTP port to local reverse proxy (Nginx)
     ports:
-      - "${PORT:-8080}:${PORT:-8080}"
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
     # Load environment configuration (APP_BASE_URL, SUPER_ADMIN_*, SMTP_*)
     env_file:
       - .env
     environment:
+      - APP_ENV=${APP_ENV:-production}
       - DB_PATH=/data/secret-santa.db
+    security_opt:
+      - no-new-privileges:true
     # Mount persistent NAS folder to /data so SQLite DB + WAL survive restarts/updates
     volumes:
       - ./data:/data

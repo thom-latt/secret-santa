@@ -7,6 +7,10 @@ import (
 	"net/mail"
 	"path"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unicode/utf8"
 
 	"secret-santa/internal/config"
 	"secret-santa/internal/db"
@@ -14,18 +18,22 @@ import (
 )
 
 type Server struct {
-	cfg      *config.Config
-	repo     *db.Repository
-	mailer   mailer.Mailer
-	staticFS fs.FS
+	cfg           *config.Config
+	repo          *db.Repository
+	mailer        mailer.Mailer
+	staticFS      fs.FS
+	sessionEpoch  atomic.Uint64
+	loginMu       sync.Mutex
+	loginAttempts map[string][]time.Time
 }
 
 func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticFS fs.FS) http.Handler {
 	s := &Server{
-		cfg:      cfg,
-		repo:     repo,
-		mailer:   m,
-		staticFS: staticFS,
+		cfg:           cfg,
+		repo:          repo,
+		mailer:        m,
+		staticFS:      staticFS,
+		loginAttempts: make(map[string][]time.Time),
 	}
 
 	mux := http.NewServeMux()
@@ -102,20 +110,26 @@ func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 		})
 	}
 
-	return withSecurityHeaders(mux)
+	cop := http.NewCrossOriginProtection()
+	return withSecurityHeaders(cfg, cop.Handler(mux))
 }
 
-func withSecurityHeaders(next http.Handler) http.Handler {
+func withSecurityHeaders(cfg *config.Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		if cfg != nil && cfg.IsSecureCookie() {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
@@ -125,13 +139,21 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func decodeJSON(r *http.Request, dst any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 64<<10))
 	return dec.Decode(dst)
+}
+
+func isValidTextLen(s string, minRunes, maxRunes int) bool {
+	n := utf8.RuneCountInString(s)
+	return n >= minRunes && n <= maxRunes
 }
 
 func isValidEmail(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > 254 {
+		return false
+	}
+	if strings.IndexFunc(raw, func(r rune) bool { return r < 0x20 || r == 0x7f }) != -1 {
 		return false
 	}
 	addr, err := mail.ParseAddress(raw)

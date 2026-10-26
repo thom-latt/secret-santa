@@ -56,7 +56,11 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 	}
 
 	var feas FeasibilityDTO
-	if len(partIDs) < 3 {
+	if ev.Status == "drawn" {
+		feas = FeasibilityDTO{
+			Mode: string(draw.ModeSingleCycle),
+		}
+	} else if len(partIDs) < 3 {
 		feas = FeasibilityDTO{
 			Mode:       "too_few",
 			Diagnostic: fmt.Sprintf("Need %d more participant(s) (minimum 3)", 3-len(partIDs)),
@@ -139,8 +143,8 @@ func (s *Server) handleUpdateAdminEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "title is required")
+	if !isValidTextLen(req.Title, 1, 200) || !isValidTextLen(req.Description, 0, 2000) || !isValidTextLen(req.EventDate, 0, 100) || !isValidTextLen(req.Budget, 0, 100) {
+		writeError(w, http.StatusBadRequest, "invalid event details (title is required, max 200 chars; description max 2000 chars)")
 		return
 	}
 
@@ -212,7 +216,7 @@ func (s *Server) handleAddParticipant(w http.ResponseWriter, r *http.Request) {
 	req.LastName = strings.TrimSpace(req.LastName)
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	if req.FirstName == "" || req.LastName == "" || !isValidEmail(req.Email) {
+	if !isValidTextLen(req.FirstName, 1, 100) || !isValidTextLen(req.LastName, 1, 100) || !isValidEmail(req.Email) {
 		writeError(w, http.StatusBadRequest, "first_name, last_name, and a valid email are required")
 		return
 	}
@@ -258,7 +262,7 @@ func (s *Server) handleUpdateParticipant(w http.ResponseWriter, r *http.Request)
 	req.LastName = strings.TrimSpace(req.LastName)
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	if req.FirstName == "" || req.LastName == "" || !isValidEmail(req.Email) {
+	if !isValidTextLen(req.FirstName, 1, 100) || !isValidTextLen(req.LastName, 1, 100) || !isValidEmail(req.Email) {
 		writeError(w, http.StatusBadRequest, "first_name, last_name, and a valid email are required")
 		return
 	}

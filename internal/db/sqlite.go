@@ -76,10 +76,11 @@ CREATE TABLE IF NOT EXISTS wishlist_items (
 `
 
 func Open(dbPath string) (*sql.DB, error) {
-	if dbPath != ":memory:" && !strings.HasPrefix(dbPath, "file::memory:") {
+	isFileDB := dbPath != ":memory:" && !strings.HasPrefix(dbPath, "file::memory:")
+	if isFileDB {
 		dir := filepath.Dir(dbPath)
 		if dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return nil, fmt.Errorf("create db directory: %w", err)
 			}
 		}
@@ -101,6 +102,9 @@ func Open(dbPath string) (*sql.DB, error) {
 	if err := conn.Ping(); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
+	}
+	if isFileDB {
+		_ = os.Chmod(dbPath, 0o600)
 	}
 
 	if _, err := conn.Exec(schemaSQL); err != nil {
