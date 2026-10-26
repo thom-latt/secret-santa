@@ -409,6 +409,7 @@ func cryptoShuffle(slice []int) {
 	buf := make([]byte, 8*n)
 	_, _ = rand.Read(buf)
 	for i := n - 1; i > 0; i-- {
+		// #nosec G115 -- modulo (i+1) bounds value to [0, i], guaranteed to fit in int
 		j := int(binary.LittleEndian.Uint64(buf[i*8:(i+1)*8]) % uint64(i+1))
 		slice[i], slice[j] = slice[j], slice[i]
 	}

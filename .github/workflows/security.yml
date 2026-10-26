@@ -1,0 +1,174 @@
+name: Security (SAST, SCA, Container CVE & DAST)
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  secrets:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sca:
+    name: Dependency CVE Audit (govulncheck & npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Audit Frontend Dependencies (HIGH/CRITICAL)
+        working-directory: web
+        run: npm audit --audit-level=high
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare embed placeholder
+        run: mkdir -p web/dist && touch web/dist/.keep
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  sast-go:
+    name: Go SAST (gosec)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare embed placeholder
+        run: mkdir -p web/dist && touch web/dist/.keep
+
+      - name: Run gosec SAST scanner
+        run: go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude-generated -fmt=sarif -out=gosec.sarif -stdout -verbose=text ./...
+
+      - name: Upload gosec SARIF to GitHub Security
+        if: always() && hashFiles('gosec.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+  sast-semgrep:
+    name: Multi-Language SAST (Semgrep OWASP Top 10)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep (Go, TypeScript/Vue, OWASP Top 10)
+        run: |
+          semgrep scan \
+            --config p/default \
+            --config p/golang \
+            --config p/typescript \
+            --config p/owasp-top-ten \
+            --error \
+            --sarif \
+            --output semgrep.sarif
+
+      - name: Upload Semgrep SARIF to GitHub Security
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  trivy:
+    name: Container & FS CVE Scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build production Docker image
+        run: docker build -t secret-santa:security .
+
+      - name: Run Trivy vulnerability scan on Docker image
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: "secret-santa:security"
+          format: "sarif"
+          output: "trivy-image.sarif"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always() && hashFiles('trivy-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "trivy-image.sarif"
+          category: trivy-image
+
+  dast:
+    name: DAST (OWASP ZAP Baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and start application container
+        run: |
+          docker build -t secret-santa:dast .
+          docker run -d --name santa-dast \
+            -p 8080:8080 \
+            -e APP_ENV=development \
+            -e APP_BASE_URL=http://localhost:8080 \
+            secret-santa:dast
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8080/api/health; then
+              echo "Target ready for DAST"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs santa-dast
+          exit 1
+
+      - name: Run OWASP ZAP Baseline scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: "http://127.0.0.1:8080"
+          cmd_options: "-I -j"
+          allow_issue_writing: false
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f santa-dast || true

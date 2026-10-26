@@ -116,6 +116,7 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	exp := time.Now().Add(24 * time.Hour).Unix()
+	// #nosec G124 -- Secure is enforced in production and on https:// URLs via IsSecureCookie()
 	http.SetCookie(w, &http.Cookie{
 		Name:     superAdminCookieName,
 		Value:    s.signSuperAdminToken(exp),
@@ -131,6 +132,7 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSuperAdminLogout(w http.ResponseWriter, r *http.Request) {
 	s.sessionEpoch.Add(1)
+	// #nosec G124 -- Secure is enforced in production and on https:// URLs via IsSecureCookie()
 	http.SetCookie(w, &http.Cookie{
 		Name:     superAdminCookieName,
 		Value:    "",

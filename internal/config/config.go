@@ -18,6 +18,7 @@ import (
 const (
 	pbkdf2Prefix            = "pbkdf2_sha256"
 	pbkdf2DefaultIterations = 210000
+	// #nosec G101 -- sentinel placeholder hash explicitly rejected in production
 	placeholderPasswordHash = "pbkdf2_sha256:210000:00000000000000000000000000000000:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 )
 
@@ -170,7 +171,7 @@ func SetEnvPasswordHash(path, hash string) error {
 	if !IsValidPasswordHash(hash) {
 		return errors.New("invalid password hash")
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- local CLI .env path, not untrusted input
 	if errors.Is(err, os.ErrNotExist) {
 		raw, _ = os.ReadFile(".env.example")
 	} else if err != nil {
@@ -204,7 +205,7 @@ func SetEnvPasswordHash(path, hash string) error {
 			out = append(out, "SUPER_ADMIN_PASSWORD_HASH="+hash, "")
 		}
 	}
-	return os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o600)
+	return os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o600) // #nosec G304,G703 -- local CLI .env path, not untrusted input
 }
 
 func (c *Config) IsSecureCookie() bool {
@@ -219,7 +220,7 @@ func getEnv(key, fallback string) string {
 }
 
 func loadDotEnv(path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- local startup .env path
 	if err != nil {
 		return err
 	}

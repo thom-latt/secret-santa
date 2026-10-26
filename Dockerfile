@@ -19,7 +19,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /app/secret-santa ./cmd
 
 # Stage 3: Minimal Production Runtime
 FROM alpine:3.21
-RUN apk --no-cache add ca-certificates tzdata su-exec && \
+RUN apk --no-cache upgrade && \
+    apk --no-cache add ca-certificates tzdata su-exec && \
     addgroup -S santa && adduser -S -G santa santa && \
     mkdir -p /data && chown -h santa:santa /data && chmod 700 /data
 WORKDIR /app
