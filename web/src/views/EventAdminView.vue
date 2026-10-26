@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useEventAdminStore, type AdminParticipant } from '../stores/eventAdmin'
 import DialogModal from '../components/DialogModal.vue'
+import ErrorView from './ErrorView.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -248,12 +249,12 @@ async function confirmAndDeleteEvent() {
 
 <template>
   <div class="mx-auto max-w-4xl px-4 py-8 space-y-6">
-    <div v-if="store.notFound" data-testid="not-found" class="rounded-2xl bg-white p-8 text-center shadow-xs border border-slate-200">
-      <p class="text-lg font-semibold text-slate-800 mb-4">{{ t('common.not_found') }}</p>
-      <router-link to="/" class="inline-flex items-center min-h-[44px] px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold">
-        {{ t('common.back_home') }}
-      </router-link>
-    </div>
+    <ErrorView v-if="store.notFound" :status="404" />
+    <ErrorView
+      v-else-if="store.error && !store.event"
+      :status="500"
+      :on-retry="() => store.fetchEvent(adminToken)"
+    />
 
     <template v-else-if="store.event">
       <!-- Top Bar -->

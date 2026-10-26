@@ -1,8 +1,25 @@
 <script setup lang="ts">
+import { ref, onErrorCaptured, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import LangSwitcher from './components/LangSwitcher.vue'
+import ErrorView from './views/ErrorView.vue'
 
 const { t } = useI18n()
+const route = useRoute()
+const hasServerError = ref(false)
+
+watch(
+  () => route.fullPath,
+  () => {
+    hasServerError.value = false
+  },
+)
+
+onErrorCaptured(() => {
+  hasServerError.value = true
+  return false
+})
 </script>
 
 <template>
@@ -18,7 +35,8 @@ const { t } = useI18n()
     </header>
 
     <main class="flex-1">
-      <router-view />
+      <ErrorView v-if="hasServerError" :status="500" :on-retry="() => (hasServerError = false)" />
+      <router-view v-else />
     </main>
   </div>
 </template>

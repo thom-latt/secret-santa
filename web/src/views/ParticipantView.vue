@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useParticipantStore, type WishlistItem } from '../stores/participant'
+import ErrorView from './ErrorView.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -88,12 +89,12 @@ async function handleDeleteItem(itemId: string) {
 
 <template>
   <div class="mx-auto max-w-3xl px-4 py-8 space-y-6">
-    <div v-if="store.notFound" data-testid="not-found" class="rounded-2xl bg-white p-8 text-center shadow-xs border border-slate-200">
-      <p class="text-lg font-semibold text-slate-800 mb-4">{{ t('common.not_found') }}</p>
-      <router-link to="/" class="inline-flex items-center min-h-[44px] px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold">
-        {{ t('common.back_home') }}
-      </router-link>
-    </div>
+    <ErrorView v-if="store.notFound" :status="404" />
+    <ErrorView
+      v-else-if="store.error && !store.data"
+      :status="500"
+      :on-retry="() => store.fetchSpace(token)"
+    />
 
     <template v-else-if="store.data">
       <!-- Event Header -->

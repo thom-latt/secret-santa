@@ -8,6 +8,7 @@ import HomeView from '../views/HomeView.vue'
 import EventAdminView from '../views/EventAdminView.vue'
 import ParticipantView from '../views/ParticipantView.vue'
 import SuperAdminView from '../views/SuperAdminView.vue'
+import App from '../App.vue'
 import { useAppConfigStore } from '../stores/appConfig'
 import { useEventAdminStore } from '../stores/eventAdmin'
 import { useParticipantStore } from '../stores/participant'
@@ -797,5 +798,40 @@ describe('Secret Santa Frontend', () => {
     // Logout
     await wrapper.get('[data-testid="superadmin-logout-btn"]').trigger('click')
     expect(saStore.logout).toHaveBeenCalled()
+  })
+
+  it('renders 4xx page on unknown routes and 5xx page on /500 or store load failure with retry', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const pinia = createTestingPinia({ stubActions: true })
+
+    // 1. Unknown route -> 4xx page
+    await router.push('/non-existent-route')
+    await router.isReady()
+
+    const appWrapper = mount(App, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+    expect(appWrapper.find('[data-testid="not-found"]').exists()).toBe(true)
+    expect(appWrapper.text()).toContain('404')
+
+    // 2. /500 route -> 5xx page
+    await router.push('/500')
+    await appWrapper.vm.$nextTick()
+    expect(appWrapper.find('[data-testid="server-error"]').exists()).toBe(true)
+    expect(appWrapper.text()).toContain('500')
+
+    // 3. 5xx state on EventAdminView when initial fetch fails, with retry
+    await router.push('/admin/events/adm_500')
+    const adminStore = useEventAdminStore(pinia)
+    adminStore.notFound = false
+    adminStore.event = null
+    adminStore.error = 'Failed to load event'
+
+    const adminWrapper = mount(EventAdminView, {
+      global: { plugins: [pinia, router, i18n] },
+    })
+    expect(adminWrapper.find('[data-testid="server-error"]').exists()).toBe(true)
+    await adminWrapper.get('[data-testid="error-retry-btn"]').trigger('click')
+    expect(adminStore.fetchEvent).toHaveBeenCalledWith('adm_500')
   })
 })

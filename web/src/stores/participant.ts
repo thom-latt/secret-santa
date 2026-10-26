@@ -40,12 +40,12 @@ export const useParticipantStore = defineStore('participant', () => {
     notFound.value = false
     try {
       const res = await fetch(`/api/p/${encodeURIComponent(token)}`)
-      if (res.status === 404) {
+      if (res.status >= 400 && res.status < 500) {
         notFound.value = true
         data.value = null
         return
       }
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         throw new Error(json.error || 'Failed to load participant page')
       }

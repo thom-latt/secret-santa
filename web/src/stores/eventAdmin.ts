@@ -54,12 +54,12 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     notFound.value = false
     try {
       const res = await fetch(`/api/admin/events/${encodeURIComponent(adminToken)}`)
-      if (res.status === 404) {
+      if (res.status >= 400 && res.status < 500) {
         notFound.value = true
         event.value = null
         return
       }
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load event')
       }
