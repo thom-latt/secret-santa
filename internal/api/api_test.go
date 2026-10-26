@@ -28,6 +28,15 @@ type testEnv struct {
 	cleanup func()
 }
 
+func mustHashPassword(t *testing.T, password string) string {
+	t.Helper()
+	h, err := config.HashPassword(password)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	return h
+}
+
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	sqlDB, err := db.Open(":memory:")
@@ -35,13 +44,13 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
 	cfg := &config.Config{
-		AppEnv:             "development",
-		Port:               "8080",
-		AppBaseURL:         "https://santa.example.com",
-		DBPath:             ":memory:",
-		SuperAdminEmail:    "super@example.com",
-		SuperAdminPassword: "secret-password-123",
-		SessionSecret:      "0123456789abcdef0123456789abcdef",
+		AppEnv:                 "development",
+		Port:                   "8080",
+		AppBaseURL:             "https://santa.example.com",
+		DBPath:                 ":memory:",
+		SuperAdminEmail:        "super@example.com",
+		SuperAdminPasswordHash: mustHashPassword(t, "secret-password-123"),
+		SessionSecret:          "0123456789abcdef0123456789abcdef",
 	}
 	repo := db.NewRepository(sqlDB)
 	mockMail := mailer.NewMockMailer()
@@ -1274,19 +1283,19 @@ func TestEpic7EmailSecurityAndPersistence(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		AppEnv:             "development",
-		Port:               "8080",
-		AppBaseURL:         "https://santa.nas.local",
-		DBPath:             dbFile,
-		SuperAdminEmail:    "admin@nas.local",
-		SuperAdminPassword: "strong-nas-password",
-		SessionSecret:      "0123456789abcdef0123456789abcdef",
-		SMTPHost:           "127.0.0.1",
-		SMTPPort:           1, // closed port — guarantees zero network connection in dev
-		SMTPUser:           "smtp-user",
-		SMTPPass:           "smtp-pass",
-		SMTPFrom:           "Secret Santa <noreply@nas.local>",
-		SMTPTLSMode:        "starttls",
+		AppEnv:                 "development",
+		Port:                   "8080",
+		AppBaseURL:             "https://santa.nas.local",
+		DBPath:                 dbFile,
+		SuperAdminEmail:        "admin@nas.local",
+		SuperAdminPasswordHash: mustHashPassword(t, "strong-nas-password"),
+		SessionSecret:          "0123456789abcdef0123456789abcdef",
+		SMTPHost:               "127.0.0.1",
+		SMTPPort:               1, // closed port — guarantees zero network connection in dev
+		SMTPUser:               "smtp-user",
+		SMTPPass:               "smtp-pass",
+		SMTPFrom:               "Secret Santa <noreply@nas.local>",
+		SMTPTLSMode:            "starttls",
 	}
 
 	mailSvc1 := mailer.NewMailer(cfg)
@@ -1492,5 +1501,26 @@ func TestSecurityHardening(t *testing.T) {
 		Email: "super@example.com", Password: "secret-password-123",
 	}); r.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 after 10 failed login attempts, got %d", r.Code)
+	}
+
+	// 6. Password hashing and .env SUPER_ADMIN_PASSWORD_HASH update mechanism
+	envPath := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(envPath, []byte("APP_ENV=production\nSUPER_ADMIN_PASSWORD=old-plain\n"), 0o600); err != nil {
+		t.Fatalf("write temp .env: %v", err)
+	}
+	newHash := mustHashPassword(t, "updated-super-secret-pass")
+	if !config.VerifyPassword("updated-super-secret-pass", newHash) || config.VerifyPassword("wrong-pass", newHash) {
+		t.Fatal("expected VerifyPassword to match only the correct password")
+	}
+	if err := config.SetEnvPasswordHash(envPath, newHash); err != nil {
+		t.Fatalf("SetEnvPasswordHash: %v", err)
+	}
+	updatedEnvBytes, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read updated .env: %v", err)
+	}
+	updatedEnv := string(updatedEnvBytes)
+	if strings.Contains(updatedEnv, "SUPER_ADMIN_PASSWORD=") || !strings.Contains(updatedEnv, "SUPER_ADMIN_PASSWORD_HASH="+newHash) {
+		t.Fatalf("expected SUPER_ADMIN_PASSWORD replaced with SUPER_ADMIN_PASSWORD_HASH in .env, got:\n%s", updatedEnv)
 	}
 }

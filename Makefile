@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-backend dev-frontend lint test build prod prod-down prod-logs prod-bin clean
+.PHONY: help install dev dev-backend dev-frontend lint test build set-password prod prod-down prod-logs prod-bin clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -34,6 +34,9 @@ test: web/dist ## Run frontend (Vitest) and backend (Go race) tests
 build: ## Build embedded SPA + single static Go binary (./secret-santa)
 	npm --prefix web run build
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o secret-santa ./cmd/server
+
+set-password: ## Prompt for a new Super Admin password and write its PBKDF2 hash to .env
+	@go run ./cmd/server set-password
 
 prod: ## Build and start production container via Docker Compose
 	docker compose up -d --build

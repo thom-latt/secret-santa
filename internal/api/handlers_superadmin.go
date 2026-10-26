@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"secret-santa/internal/config"
 	"secret-santa/internal/db"
 	"secret-santa/internal/mailer"
 )
@@ -21,7 +22,7 @@ const superAdminCookieName = "secret_santa_superadmin"
 
 func (s *Server) signSuperAdminToken(expUnix int64) string {
 	emailNorm := strings.ToLower(strings.TrimSpace(s.cfg.SuperAdminEmail))
-	payload := fmt.Sprintf("superadmin:%d:%d:%s:%s", expUnix, s.sessionEpoch.Load(), emailNorm, s.cfg.SuperAdminPassword)
+	payload := fmt.Sprintf("superadmin:%d:%d:%s:%s", expUnix, s.sessionEpoch.Load(), emailNorm, s.cfg.SuperAdminPasswordHash)
 	mac := hmac.New(sha256.New, []byte(s.cfg.SessionSecret))
 	_, _ = mac.Write([]byte(payload))
 	sig := hex.EncodeToString(mac.Sum(nil))
@@ -105,13 +106,10 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	inputEmailHash := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(req.Email))))
 	expectedEmailHash := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(s.cfg.SuperAdminEmail))))
 
-	inputPassHash := sha256.Sum256([]byte(req.Password))
-	expectedPassHash := sha256.Sum256([]byte(s.cfg.SuperAdminPassword))
-
 	emailMatch := subtle.ConstantTimeCompare(inputEmailHash[:], expectedEmailHash[:])
-	passMatch := subtle.ConstantTimeCompare(inputPassHash[:], expectedPassHash[:])
+	passMatch := config.VerifyPassword(req.Password, s.cfg.SuperAdminPasswordHash)
 
-	if emailMatch != 1 || passMatch != 1 {
+	if emailMatch != 1 || !passMatch {
 		s.recordLoginFailure(ip)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return

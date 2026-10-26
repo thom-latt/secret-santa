@@ -10,7 +10,7 @@ Privacy-first, passwordless, bilingual (French / English) Secret Santa web appli
    ```bash
    cp .env.example .env
    ```
-2. Edit `.env` for production (`APP_ENV=production`, `APP_BASE_URL=https://santa.mydomain.com`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SESSION_SECRET`, and `SMTP_*` settings).
+2. Edit `.env` for production (`APP_ENV=production`, `APP_BASE_URL=https://santa.mydomain.com`, `SUPER_ADMIN_EMAIL`, `SESSION_SECRET`, and `SMTP_*` settings) and set the Super Admin password hash via `make set-password` (or `./secret-santa set-password`).
 3. Start the container:
    ```bash
    docker compose up -d
@@ -28,7 +28,7 @@ Privacy-first, passwordless, bilingual (French / English) Secret Santa web appli
 | `APP_BASE_URL` | `http://localhost:8080` | Mandatory in production (e.g., `https://santa.mydomain.com`); used to build magic links |
 | `DB_PATH` | `./data/secret-santa.db` | Path to the SQLite database file (`/data/secret-santa.db` in Docker) |
 | `SUPER_ADMIN_EMAIL` | `admin@example.com` | Email for `/superadmin` login and SMTP test target |
-| `SUPER_ADMIN_PASSWORD` | — | Password for `/superadmin` (must be changed in production) |
+| `SUPER_ADMIN_PASSWORD_HASH` | — | PBKDF2-HMAC-SHA256 password hash for `/superadmin` (set via `make set-password` or `./secret-santa set-password`) |
 | `SESSION_SECRET` | — | Secret key used to sign the `HttpOnly; SameSite=Strict` Super Admin cookie (required in production) |
 | `SMTP_HOST` | — | SMTP server hostname (required in production) |
 | `SMTP_PORT` | `587` | SMTP server port (`587`, `465`, or `25`) |
