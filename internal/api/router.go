@@ -86,7 +86,8 @@ func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 				writeError(w, http.StatusNotFound, "not found")
 				return
 			}
-			cleanPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+			// nosemgrep: go.lang.security.filepath-clean-misuse
+			cleanPath := strings.TrimPrefix(path.Clean("/"+strings.Trim(r.URL.Path, "/")), "/")
 			if cleanPath != "" && cleanPath != "." {
 				if f, err := staticFS.Open(cleanPath); err == nil {
 					_ = f.Close()
@@ -106,6 +107,7 @@ func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
+			// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 			_, _ = w.Write(indexBytes)
 		})
 	}

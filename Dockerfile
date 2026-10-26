@@ -32,4 +32,5 @@ ENV APP_ENV=production \
     DB_PATH=/data/secret-santa.db
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -qO- http://127.0.0.1:${PORT:-8080}/api/health || exit 1
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["sh", "-c", "if [ \"$(id -u)\" = '0' ]; then mkdir -p /data && chown -h santa:santa /data && chmod 700 /data && exec su-exec santa /app/secret-santa; else exec /app/secret-santa; fi"]

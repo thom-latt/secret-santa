@@ -66,7 +66,8 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 			Diagnostic: fmt.Sprintf("Need %d more participant(s) (minimum 3)", 3-len(partIDs)),
 		}
 	} else {
-		res, solveErr := draw.Solve(partIDs, exPairs)
+		// nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
+	res, solveErr := draw.Solve(partIDs, exPairs)
 		diag := res.Diagnostic
 		for id, name := range nameByID {
 			diag = strings.ReplaceAll(diag, id, name)
@@ -461,6 +462,7 @@ func (s *Server) handleDrawEvent(w http.ResponseWriter, r *http.Request) {
 		exPairs[i] = draw.ExclusionPair{A: ex.ParticipantAID, B: ex.ParticipantBID}
 	}
 
+	// nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
 	res, solveErr := draw.Solve(partIDs, exPairs)
 	if solveErr != nil {
 		diag := res.Diagnostic

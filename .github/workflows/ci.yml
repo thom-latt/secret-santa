@@ -52,7 +52,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.26.x"
           cache: true
 
       - name: Download built frontend dist
