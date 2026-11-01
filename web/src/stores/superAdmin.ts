@@ -83,7 +83,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
     last_name: string
     email: string
     locale: string
-  }) {
+  }): Promise<{ id: string; title: string; admin_token: string }> {
     const res = await fetch('/api/superadmin/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -94,6 +94,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
       throw new Error(data.error || 'Failed to invite organizer')
     }
     await fetchOverview()
+    return data
   }
 
   async function testSmtp() {

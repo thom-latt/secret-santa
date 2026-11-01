@@ -80,6 +80,10 @@ func newTestEnvWith(t *testing.T, mutate func(*config.Config)) *testEnv {
 		mutate(cfg)
 	}
 	repo := db.NewRepository(sqlDB)
+	// Fresh databases are invitation-only; most tests exercise public creation.
+	if err := repo.SetAllowPublicEventCreation(true); err != nil {
+		t.Fatalf("enable public creation: %v", err)
+	}
 	mockMail := mailer.NewMockMailer()
 	handler := NewRouter(cfg, repo, mockMail, nil)
 
@@ -1365,6 +1369,9 @@ func TestEpic7EmailSecurityAndPersistence(t *testing.T) {
 	}
 
 	repo1 := db.NewRepository(sqlDB1)
+	if err := repo1.SetAllowPublicEventCreation(true); err != nil {
+		t.Fatal(err)
+	}
 	router1 := NewRouter(cfg, repo1, mailSvc1, staticFS)
 
 	// Verify Security Headers & SPA Fallback on non-API routes
@@ -1577,5 +1584,29 @@ func TestSecurityHardening(t *testing.T) {
 	updatedEnv := string(updatedEnvBytes)
 	if strings.Contains(updatedEnv, "SUPER_ADMIN_PASSWORD=") || !strings.Contains(updatedEnv, "SUPER_ADMIN_PASSWORD_HASH="+newHash) {
 		t.Fatalf("expected SUPER_ADMIN_PASSWORD replaced with SUPER_ADMIN_PASSWORD_HASH in .env, got:\n%s", updatedEnv)
+	}
+}
+
+func TestFreshDatabaseIsInvitationOnly(t *testing.T) {
+	sqlDB, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	repo := db.NewRepository(sqlDB)
+	allow, err := repo.GetAllowPublicEventCreation()
+	if err != nil || allow {
+		t.Fatalf("expected fresh DB to disallow public creation, got %v (err=%v)", allow, err)
+	}
+	cfg := &config.Config{
+		AppEnv: "development", Port: "8080", AppBaseURL: "https://santa.example.com",
+		SuperAdminEmail: "super@example.com", SessionSecret: "0123456789abcdef0123456789abcdef",
+	}
+	h := NewRouter(cfg, repo, mailer.NewMockMailer(), nil)
+	rec := doJSON(t, h, http.MethodPost, "/api/events", map[string]string{
+		"title": "T", "first_name": "A", "last_name": "B", "email": "a@example.com", "locale": "en",
+	})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }

@@ -63,7 +63,7 @@ async function handleRecover() {
   <div class="mx-auto max-w-2xl space-y-8 px-4 py-8">
     <section class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200">
       <h1 class="text-2xl font-bold text-slate-900 mb-4">
-        {{ t('home.create_title') }}
+        {{ configStore.allowPublicEventCreation ? t('home.create_title') : t('home.private_title') }}
       </h1>
 
       <div
@@ -71,7 +71,7 @@ async function handleRecover() {
         data-testid="public-disabled-banner"
         class="rounded-xl bg-amber-50 border border-amber-200 p-4 text-amber-900 text-sm"
       >
-        {{ t('home.public_disabled') }}
+        {{ t('home.private_banner') }}
       </div>
 
       <form v-else data-testid="create-event-form" class="space-y-4" @submit.prevent="handleCreate">

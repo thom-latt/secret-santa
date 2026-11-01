@@ -15,6 +15,9 @@ const inviteTitle = ref('')
 const inviteFirstName = ref('')
 const inviteLastName = ref('')
 const inviteEmail = ref('')
+const inviteLocale = ref<string>(locale.value)
+const inviteLink = ref<string | null>(null)
+const inviteLinkCopied = ref(false)
 const statusMessage = ref<string | null>(null)
 const actionError = ref<string | null>(null)
 
@@ -62,13 +65,15 @@ async function handleInvite() {
   actionError.value = null
   statusMessage.value = null
   try {
-    await store.inviteOrganizer({
+    const created = await store.inviteOrganizer({
       title: inviteTitle.value,
       first_name: inviteFirstName.value,
       last_name: inviteLastName.value,
       email: inviteEmail.value,
-      locale: locale.value,
+      locale: inviteLocale.value,
     })
+    inviteLink.value = `${window.location.origin}/admin/events/${created.admin_token}`
+    inviteLinkCopied.value = false
     inviteTitle.value = ''
     inviteFirstName.value = ''
     inviteLastName.value = ''
@@ -76,6 +81,15 @@ async function handleInvite() {
     statusMessage.value = t('superadmin.invite_sent')
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function copyInviteLink() {
+  try {
+    await navigator.clipboard.writeText(inviteLink.value ?? '')
+    inviteLinkCopied.value = true
+  } catch {
+    // ignore clipboard errors
   }
 }
 
@@ -197,51 +211,91 @@ async function confirmDelete() {
       <!-- Invite Organizer (US-6.3) -->
       <section class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200 space-y-4">
         <h2 class="text-lg font-bold text-slate-900">{{ t('superadmin.invite_title') }}</h2>
-        <form data-testid="invite-organizer-form" class="grid grid-cols-1 sm:grid-cols-5 gap-3" @submit.prevent="handleInvite">
-          <input
-            v-model="inviteTitle"
-            type="text"
-            required
-            autocomplete="off"
-            data-testid="invite-title"
-            :placeholder="t('home.event_title')"
-            class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            v-model="inviteFirstName"
-            type="text"
-            required
-            autocomplete="off"
-            data-testid="invite-first-name"
-            :placeholder="t('admin.first_name')"
-            class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            v-model="inviteLastName"
-            type="text"
-            required
-            autocomplete="off"
-            data-testid="invite-last-name"
-            :placeholder="t('admin.last_name')"
-            class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            v-model="inviteEmail"
-            type="email"
-            required
-            autocomplete="off"
-            data-testid="invite-email"
-            :placeholder="t('admin.email')"
-            class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+        <form data-testid="invite-organizer-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3" @submit.prevent="handleInvite">
+          <div>
+            <label for="invite-title" class="block text-sm font-medium text-slate-700 mb-1">{{ t('home.event_title') }}</label>
+            <input
+              v-model="inviteTitle"
+              id="invite-title"
+              type="text"
+              required
+              autocomplete="off"
+              data-testid="invite-title"
+              :placeholder="t('home.event_title')"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label for="invite-first-name" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.first_name') }}</label>
+            <input
+              v-model="inviteFirstName"
+              id="invite-first-name"
+              type="text"
+              required
+              autocomplete="off"
+              data-testid="invite-first-name"
+              :placeholder="t('admin.first_name')"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label for="invite-last-name" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.last_name') }}</label>
+            <input
+              v-model="inviteLastName"
+              id="invite-last-name"
+              type="text"
+              required
+              autocomplete="off"
+              data-testid="invite-last-name"
+              :placeholder="t('admin.last_name')"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label for="invite-email" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.email') }}</label>
+            <input
+              v-model="inviteEmail"
+              id="invite-email"
+              type="email"
+              required
+              autocomplete="off"
+              data-testid="invite-email"
+              :placeholder="t('admin.email')"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label for="invite-locale" class="block text-sm font-medium text-slate-700 mb-1">{{ t('superadmin.invite_locale') }}</label>
+            <select
+              id="invite-locale"
+              v-model="inviteLocale"
+              data-testid="invite-locale"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+            >
+              <option value="fr">{{ t('app.lang_fr') }}</option>
+              <option value="en">{{ t('app.lang_en') }}</option>
+            </select>
+          </div>
           <button
             type="submit"
             data-testid="invite-submit-btn"
-            class="min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 cursor-pointer"
+            class="sm:col-span-2 min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 cursor-pointer"
           >
             {{ t('superadmin.invite_btn') }}
           </button>
         </form>
+        <div v-if="inviteLink" data-testid="invite-link-box" class="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
+          <p class="text-sm font-medium text-slate-700">{{ t('superadmin.invite_link') }}</p>
+          <code data-testid="invite-link" class="block break-all text-xs text-slate-900">{{ inviteLink }}</code>
+          <button
+            type="button"
+            data-testid="invite-copy-btn"
+            class="min-h-[44px] rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+            @click="copyInviteLink"
+          >
+            {{ inviteLinkCopied ? t('superadmin.invite_copied') : t('superadmin.invite_copy') }}
+          </button>
+        </div>
       </section>
 
       <!-- Hosted Events List (US-6.4) -->

@@ -111,6 +111,7 @@ describe('Secret Santa Frontend', () => {
     })
 
     expect(wrapper.find('[data-testid="public-disabled-banner"]').exists()).toBe(true)
+    expect(wrapper.get('h1').text()).toBe(i18n.global.t('home.private_title'))
     expect(wrapper.find('[data-testid="create-event-form"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="recover-form"]').exists()).toBe(true)
   })
@@ -763,6 +764,7 @@ describe('Secret Santa Frontend', () => {
     expect(toggleBtn.text()).toBe('OFF')
 
     // 3. US-6.3: Invite an organizer
+    vi.mocked(saStore.inviteOrganizer).mockResolvedValueOnce({ id: 'e9', title: 'Secret Santa Amis', admin_token: 'tok9' })
     await wrapper.get('[data-testid="invite-title"]').setValue('Secret Santa Amis')
     await wrapper.get('[data-testid="invite-first-name"]').setValue('Paul')
     await wrapper.get('[data-testid="invite-last-name"]').setValue('Bernard')

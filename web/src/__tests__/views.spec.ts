@@ -116,10 +116,12 @@ describe('HomeView with the real store', () => {
     expect(count('POST', '/api/events')).toBe(1)
   })
 
-  it('still shows the creation form when the public configuration cannot be loaded', async () => {
+  it('stays private (no creation form) when the public configuration cannot be loaded', async () => {
     on('GET', '/api/public/config', () => json({ error: 'x' }, 500))
     const { wrapper } = await mountAt(HomeView, '/')
-    expect(wrapper.find('[data-testid="create-event-form"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="create-event-form"]').exists()).toBe(false)
+    expect(wrapper.get('h1').text()).toBe(i18n.global.t('home.private_title'))
+    expect(wrapper.get('[data-testid="public-disabled-banner"]').text()).toBe(i18n.global.t('home.private_banner'))
   })
 
   it('shows recovery errors and clears them on the next successful attempt', async () => {
@@ -479,8 +481,15 @@ describe('SuperAdminView with the real store', () => {
     })
 
     fail = false
+    await wrapper.get('[data-testid="invite-locale"]').setValue('fr')
     await wrapper.get('[data-testid="invite-organizer-form"]').trigger('submit.prevent')
     await flushPromises()
+    expect(requests.filter((r) => r.url === '/api/superadmin/invite').pop()?.body?.locale).toBe('fr')
+    expect(wrapper.get('[data-testid="invite-link"]').text()).toBe(`${window.location.origin}/admin/events/x`)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await wrapper.get('[data-testid="invite-copy-btn"]').trigger('click')
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/admin/events/x`)
     expect(wrapper.find('[data-testid="superadmin-status-message"]').exists()).toBe(true)
     expect((wrapper.get('[data-testid="invite-email"]').element as HTMLInputElement).value).toBe('')
   })

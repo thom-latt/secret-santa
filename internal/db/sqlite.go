@@ -14,11 +14,11 @@ import (
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS app_settings (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
-	allow_public_event_creation INTEGER NOT NULL DEFAULT 1,
+	allow_public_event_creation INTEGER NOT NULL DEFAULT 0,
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT OR IGNORE INTO app_settings (id, allow_public_event_creation) VALUES (1, 1);
+INSERT OR IGNORE INTO app_settings (id, allow_public_event_creation) VALUES (1, 0);
 
 CREATE TABLE IF NOT EXISTS events (
 	id TEXT PRIMARY KEY,

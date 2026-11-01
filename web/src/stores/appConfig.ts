@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { readJson } from './http'
 
 export const useAppConfigStore = defineStore('appConfig', () => {
-  const allowPublicEventCreation = ref<boolean>(true)
+  const allowPublicEventCreation = ref<boolean>(false)
   const loaded = ref<boolean>(false)
 
   async function fetchPublicConfig() {
