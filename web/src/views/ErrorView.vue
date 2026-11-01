@@ -47,6 +47,15 @@ const is5xx = computed(() => props.status >= 500)
         </button>
 
         <router-link
+          v-if="!is5xx"
+          :to="{ path: '/', hash: '#recover' }"
+          data-testid="resend-links-link"
+          class="inline-flex items-center min-h-[44px] px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50"
+        >
+          {{ t('common.resend_links') }}
+        </router-link>
+
+        <router-link
           to="/"
           class="inline-flex items-center min-h-[44px] px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
         >

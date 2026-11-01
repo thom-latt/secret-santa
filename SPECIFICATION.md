@@ -180,6 +180,7 @@ flowchart TD
   - **Acceptance Criteria**: FR/EN selector in the header; initial detection via `localStorage` then browser language (fallback `fr`); emails generated in the event's `locale`.
 
 - **US-1.2 — Passwordless Event Creation (when public creation is enabled)**
+  - *Default*: public creation is **off** on a fresh instance (invite-only); the Super Admin must switch it on explicitly (US-6.2).
   - *As a* visitor on the home page,
   - *I want* to enter the **Event Title**, my **First Name**, my **Last Name**, and my **Email** in a lightweight initialization form,
   - *So that* I can create my event immediately and receive my administration magic link via email.

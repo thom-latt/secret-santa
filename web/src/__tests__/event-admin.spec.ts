@@ -356,3 +356,80 @@ describe('EventAdminView - launching the draw', () => {
     expect(requests.filter((r) => r.url.endsWith('/draw')).length).toBe(1)
   })
 })
+
+// ------------------------------------------------------------------ Phase 9: accessibility & UX
+
+describe('EventAdminView - accessibility and UX', () => {
+  it('gives every text input a programmatically associated label', async () => {
+    const w = await mountAdmin()
+    const inputs = w.findAll('input:not([type="checkbox"]), textarea')
+    expect(inputs.length).toBeGreaterThan(5)
+    for (const input of inputs) {
+      const id = input.attributes('id')
+      expect(id, input.html()).toBeTruthy()
+      expect(w.find(`label[for="${id}"]`).exists(), input.html()).toBe(true)
+    }
+  })
+
+  it('uses a unique title id per modal', async () => {
+    const w = await mountAdmin()
+    const dialogs = w.findAll('dialog')
+    expect(dialogs).toHaveLength(2)
+    const ids = dialogs.map((d) => d.attributes('aria-labelledby'))
+    expect(new Set(ids).size).toBe(2)
+    dialogs.forEach((d, i) => expect(d.find(`#${ids[i]}`).exists()).toBe(true))
+  })
+
+  it('announces errors and disables the add button while the request is in flight', async () => {
+    const w = await mountAdmin()
+    let finish!: () => void
+    overrides.set('POST /api/admin/events/tok/participants', () => new Promise<Response>((r) => { finish = () => r(json({ error: 'this email is already in the participant list' }, 409)) }))
+    await w.get('#new-first-name').setValue('Eve')
+    await w.get('#new-last-name').setValue('Z')
+    await w.get('#new-email').setValue('eve@example.com')
+    await w.get('[data-testid="add-participant-form"]').trigger('submit')
+    const btn = w.get('[data-testid="add-participant-form"] button[type="submit"]')
+    expect(btn.attributes('disabled')).toBeDefined()
+    await w.get('[data-testid="add-participant-form"]').trigger('submit')
+    expect(requests.filter((r) => r.method === 'POST' && r.url.endsWith('/participants'))).toHaveLength(1)
+    finish()
+    await flushPromises()
+    expect(btn.attributes('disabled')).toBeUndefined()
+    expect(w.get('[role="alert"]').text()).toContain('already in the participant list')
+  })
+
+  it('shows a loading state while the event loads', async () => {
+    let release!: () => void
+    overrides.set('GET /api/admin/events/tok', () => new Promise<Response>((r) => { release = () => r(json(eventPayload())) }))
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/admin/events/tok')
+    const w = mount(EventAdminView, { attachTo: document.body, global: { plugins: [createPinia(), router, i18n] } })
+    await flushPromises()
+    expect(w.text()).toContain('Loading...')
+    release()
+    await flushPromises()
+    expect(w.text()).not.toContain('Loading...')
+  })
+
+  it('tells the organizer a post-draw email change kills the old link', async () => {
+    status = 'drawn'
+    const w = await mountAdmin()
+    await w.get('[data-testid="edit-participant-btn"]').trigger('click')
+    await w.get('[data-testid="edit-participant-email"]').setValue('new@example.com')
+    expect(w.find('[data-testid="email-change-notice"]').exists()).toBe(false)
+    overrides.set('PUT /api/admin/events/tok/participants/p1', () => json(eventPayload()))
+    await w.get('[data-testid="save-participant-btn"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="email-change-notice"]').text()).toContain('no longer works')
+  })
+
+  it('does not show that notice before the draw', async () => {
+    const w = await mountAdmin()
+    await w.get('[data-testid="edit-participant-btn"]').trigger('click')
+    await w.get('[data-testid="edit-participant-email"]').setValue('new@example.com')
+    overrides.set('PUT /api/admin/events/tok/participants/p1', () => json(eventPayload()))
+    await w.get('[data-testid="save-participant-btn"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="email-change-notice"]').exists()).toBe(false)
+  })
+})

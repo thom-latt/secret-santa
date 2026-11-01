@@ -592,3 +592,77 @@ describe('PrivacyView', () => {
     expect(wrapper.text()).toContain('12 mois')
   })
 })
+
+// ------------------------------------------------------------------ Phase 9: accessibility & UX
+
+describe('Accessibility and UX blockers', () => {
+  const space = {
+    first_name: 'Alice', last_name: 'Martin', email: 'alice@example.com', event_title: 'Xmas',
+    event_date: '', budget: '', description: '', locale: 'en', revealed: false,
+    link_clicked_at: null, own_wishlist: [] as Array<Record<string, unknown>>,
+  }
+
+  it('labels the recovery email and keeps focus rings on the home inputs', async () => {
+    on('GET', '/api/public/config', () => json({ allow_public_event_creation: true, operator_name: 'Op', operator_email: 'op@example.com' }))
+    const { wrapper } = await mountAt(HomeView, '/')
+    const input = wrapper.get('[data-testid="recover-form"] input')
+    const label = wrapper.find(`label[for="${input.attributes('id')}"]`)
+    expect(input.attributes('id')).toBeTruthy()
+    expect(label.exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('focus:outline-hidden')
+  })
+
+  it('announces home errors with role="alert"', async () => {
+    on('GET', '/api/public/config', () => json({ allow_public_event_creation: true, operator_name: 'Op', operator_email: 'op@example.com' }))
+    on('POST', '/api/events', () => json({ error: 'invalid email address' }, 400))
+    on('POST', '/api/recover', () => json({ error: 'nope' }, 400))
+    const { wrapper } = await mountAt(HomeView, '/')
+    await wrapper.get('#event-title').setValue('Xmas')
+    await wrapper.get('#org-first-name').setValue('A')
+    await wrapper.get('#org-last-name').setValue('B')
+    await wrapper.get('#org-email').setValue('a@example.com')
+    await wrapper.get('[data-testid="create-event-form"]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Invalid email address.')
+  })
+
+  it('offers "Resend my links" on a 404 and shows a loading state on the participant page', async () => {
+    on('GET', '/api/p/gone', () => json({ error: 'participant not found' }, 404))
+    const { wrapper } = await mountAt(ParticipantView, '/p/gone')
+    const link = wrapper.get('[data-testid="resend-links-link"]')
+    expect(link.attributes('href')).toBe('/#recover')
+    expect(link.text()).toBe('Resend my links')
+
+    let release!: () => void
+    on('GET', '/api/p/slow', () => new Promise<Response>((r) => { release = () => r(json(space)) }))
+    const slow = await mountAt(ParticipantView, '/p/slow')
+    expect(slow.wrapper.text()).toContain('Loading...')
+    release()
+    await flushPromises()
+    expect(slow.wrapper.text()).not.toContain('Loading...')
+  })
+
+  it('announces participant errors and disables the reveal button while in flight', async () => {
+    on('GET', '/api/p/tok', () => json(space))
+    let fail!: () => void
+    on('POST', '/api/p/tok/reveal', () => new Promise<Response>((r) => { fail = () => r(json({ error: 'participant not found' }, 404)) }))
+    const { wrapper } = await mountAt(ParticipantView, '/p/tok')
+    await wrapper.get('[data-testid="discover-btn"]').trigger('click')
+    expect(wrapper.get('[data-testid="discover-btn"]').attributes('disabled')).toBeDefined()
+    expect(count('POST', '/api/p/tok/reveal')).toBe(1)
+    await wrapper.get('[data-testid="discover-btn"]').trigger('click')
+    expect(count('POST', '/api/p/tok/reveal')).toBe(1)
+    fail()
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Participant not found.')
+    expect(wrapper.get('[data-testid="discover-btn"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('associates labels with the super-admin login inputs', async () => {
+    on('GET', '/api/superadmin/overview', () => json({ error: 'unauthorized' }, 401))
+    const { wrapper } = await mountAt(SuperAdminView, '/superadmin')
+    for (const input of wrapper.get('[data-testid="superadmin-login-form"]').findAll('input')) {
+      expect(wrapper.find(`label[for="${input.attributes('id')}"]`).exists()).toBe(true)
+    }
+  })
+})

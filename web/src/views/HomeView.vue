@@ -85,7 +85,7 @@ async function handleRecover() {
             type="text"
             required
             :placeholder="t('home.event_title_placeholder')"
-            class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600 focus:outline-hidden"
+            class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600"
           />
         </div>
 
@@ -99,7 +99,7 @@ async function handleRecover() {
               v-model="firstName"
               type="text"
               required
-              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600 focus:outline-hidden"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600"
             />
           </div>
           <div>
@@ -111,7 +111,7 @@ async function handleRecover() {
               v-model="lastName"
               type="text"
               required
-              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600 focus:outline-hidden"
+              class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600"
             />
           </div>
         </div>
@@ -125,11 +125,11 @@ async function handleRecover() {
             v-model="email"
             type="email"
             required
-            class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600 focus:outline-hidden"
+            class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600"
           />
         </div>
 
-        <p v-if="createError" class="text-sm text-red-600 font-medium">
+        <p v-if="createError" role="alert" class="text-sm text-red-600 font-medium">
           {{ createError }}
         </p>
 
@@ -143,7 +143,7 @@ async function handleRecover() {
       </form>
     </section>
 
-    <section class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200">
+    <section id="recover" class="rounded-2xl bg-white p-6 shadow-xs border border-slate-200">
       <h2 class="text-lg font-bold text-slate-900 mb-2">
         {{ t('home.recover_title') }}
       </h2>
@@ -152,12 +152,14 @@ async function handleRecover() {
       </p>
 
       <form data-testid="recover-form" class="flex flex-col sm:flex-row gap-3" @submit.prevent="handleRecover">
+        <label for="recover-email" class="sr-only">{{ t('home.email') }}</label>
         <input
+          id="recover-email"
           v-model="recoverEmail"
           type="email"
           required
           :placeholder="t('home.email')"
-          class="flex-1 min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600 focus:outline-hidden"
+          class="flex-1 min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-600"
         />
         <button
           type="submit"
@@ -170,7 +172,7 @@ async function handleRecover() {
       <p v-if="recoverMessage" data-testid="recover-message" class="mt-3 text-sm text-emerald-700 font-medium">
         {{ recoverMessage }}
       </p>
-      <p v-if="recoverError" class="mt-3 text-sm text-red-600 font-medium">
+      <p v-if="recoverError" role="alert" class="mt-3 text-sm text-red-600 font-medium">
         {{ recoverError }}
       </p>
     </section>

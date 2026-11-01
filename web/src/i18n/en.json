@@ -90,7 +90,8 @@
     "feasibility_reason_cannot_receive": "Nobody can give a gift to {name}: too many exclusions.",
     "feasibility_reason_too_few_partners": "{name} has fewer than 2 possible partners: the draw would force a mutual swap.",
     "feasibility_reason_reciprocal_only": "The exclusions make a draw impossible without mutual swaps.",
-    "feasibility_missing": "{count} more participant(s) needed (minimum 3)"
+    "feasibility_missing": "{count} more participant(s) needed (minimum 3)",
+    "email_changed_notice": "The link previously sent to {name} no longer works. Use \"Resend email\" so they receive the new one."
   },
   "participant": {
     "welcome": "Hello {name}",
@@ -146,7 +147,8 @@
     "server_error_desc": "Something went wrong on our end. Please try again in a moment.",
     "retry": "Try again",
     "back_home": "Back to Home",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "resend_links": "Resend my links"
   },
   "privacy": {
     "title": "Privacy notice",

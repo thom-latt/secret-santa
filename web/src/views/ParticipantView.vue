@@ -15,6 +15,7 @@ const token = computed(() => String(route.params.token || ''))
 // Local screen toggle after target has been revealed on backend
 const locallyVisible = ref(true)
 const actionError = ref<string | null>(null)
+const revealing = ref(false)
 
 // Own wishlist form
 const newTitle = ref('')
@@ -32,12 +33,16 @@ onMounted(async () => {
 })
 
 async function handleDiscover() {
+  if (revealing.value) return
   actionError.value = null
+  revealing.value = true
   try {
     await store.revealTarget(token.value)
     locallyVisible.value = true
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    revealing.value = false
   }
 }
 
@@ -113,7 +118,7 @@ async function handleDeleteItem(itemId: string) {
         </p>
       </header>
 
-      <p v-if="actionError" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
+      <p v-if="actionError" role="alert" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
         {{ actionError }}
       </p>
 
@@ -138,10 +143,11 @@ async function handleDeleteItem(itemId: string) {
           <button
             type="button"
             data-testid="discover-btn"
-            class="min-h-[44px] rounded-xl bg-red-600 px-6 py-3 text-base font-bold text-white hover:bg-red-700 cursor-pointer"
+            :disabled="revealing"
+            class="min-h-[44px] rounded-xl bg-red-600 px-6 py-3 text-base font-bold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
             @click="handleDiscover"
           >
-            {{ t('participant.discover_btn') }}
+            {{ revealing ? t('common.loading') : t('participant.discover_btn') }}
           </button>
         </div>
 
@@ -259,7 +265,9 @@ async function handleDeleteItem(itemId: string) {
             class="rounded-xl border border-slate-200 p-4"
           >
             <div v-if="editingItemId === item.id" class="space-y-2">
+              <label for="edit-item-title" class="sr-only">{{ t('participant.item_title') }}</label>
               <input
+                id="edit-item-title"
                 v-model="editItemTitle"
                 data-testid="edit-wishlist-title"
                 type="text"
@@ -267,13 +275,17 @@ async function handleDeleteItem(itemId: string) {
                 maxlength="200"
                 class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
+              <label for="edit-item-url" class="sr-only">{{ t('participant.item_url') }}</label>
               <input
+                id="edit-item-url"
                 v-model="editItemUrl"
                 data-testid="edit-wishlist-url"
                 type="text"
                 class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
+              <label for="edit-item-note" class="sr-only">{{ t('participant.item_note') }}</label>
               <input
+                id="edit-item-note"
                 v-model="editItemNote"
                 data-testid="edit-wishlist-note"
                 type="text"
@@ -337,5 +349,6 @@ async function handleDeleteItem(itemId: string) {
         </div>
       </section>
     </template>
+    <p v-else role="status" class="text-center text-sm text-slate-600">{{ t('common.loading') }}</p>
   </div>
 </template>

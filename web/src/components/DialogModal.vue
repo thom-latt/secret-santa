@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, useId } from 'vue'
 
 const props = defineProps<{
   open: boolean
@@ -10,6 +10,7 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
+const titleId = useId()
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
 watch(
@@ -57,11 +58,11 @@ onMounted(() => {
   <dialog
     ref="dialogRef"
     closedby="any"
-    aria-labelledby="modal-title"
+    :aria-labelledby="titleId"
     class="m-auto w-full max-w-md rounded-xl bg-white p-6 text-slate-900 shadow-xl"
     @close="emit('close')"
   >
-    <h2 id="modal-title" class="text-lg font-bold text-slate-900 mb-2">
+    <h2 :id="titleId" class="text-lg font-bold text-slate-900 mb-2">
       {{ title }}
     </h2>
     <div class="text-sm text-slate-600 mb-6">

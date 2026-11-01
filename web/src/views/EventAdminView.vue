@@ -28,6 +28,8 @@ const firstNameInput = ref<HTMLInputElement | null>(null)
 const newFirstName = ref('')
 const newLastName = ref('')
 const newEmail = ref('')
+const adding = ref(false)
+const emailChangeNotice = ref<string | null>(null)
 
 // Edit participant inline state
 const editingParticipantId = ref<string | null>(null)
@@ -155,7 +157,9 @@ async function handleToggleOrganizerParticipates() {
 }
 
 async function handleAddParticipant() {
+  if (adding.value) return
   actionError.value = null
+  adding.value = true
   try {
     await store.addParticipant(adminToken.value, {
       first_name: newFirstName.value,
@@ -168,6 +172,8 @@ async function handleAddParticipant() {
     firstNameInput.value?.focus()
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    adding.value = false
   }
 }
 
@@ -180,6 +186,8 @@ function startEditParticipant(p: AdminParticipant) {
 
 async function saveEditParticipant(participantId: string) {
   actionError.value = null
+  emailChangeNotice.value = null
+  const previous = store.event?.participants.find((p) => p.id === participantId)
   try {
     await store.updateParticipant(adminToken.value, participantId, {
       first_name: editPartFirstName.value,
@@ -187,6 +195,11 @@ async function saveEditParticipant(participantId: string) {
       email: editPartEmail.value,
     })
     editingParticipantId.value = null
+    if (store.event?.status === 'drawn' && previous && previous.email !== editPartEmail.value) {
+      emailChangeNotice.value = t('admin.email_changed_notice', {
+        name: `${editPartFirstName.value} ${editPartLastName.value}`,
+      })
+    }
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
   }
@@ -318,8 +331,17 @@ async function confirmAndDeleteEvent() {
         </div>
       </div>
 
-      <p v-if="actionError" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
+      <p v-if="actionError" role="alert" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
         {{ actionError }}
+      </p>
+
+      <p
+        v-if="emailChangeNotice"
+        data-testid="email-change-notice"
+        role="status"
+        class="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 font-medium"
+      >
+        {{ emailChangeNotice }}
       </p>
 
       <!-- Event Details Form -->
@@ -328,8 +350,9 @@ async function confirmAndDeleteEvent() {
         <form class="space-y-4" @submit.prevent="handleSaveDetails">
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div class="sm:col-span-1">
-              <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('home.event_title') }} *</label>
+              <label for="edit-title" class="block text-sm font-medium text-slate-700 mb-1">{{ t('home.event_title') }} *</label>
               <input
+                id="edit-title"
                 v-model="editTitle"
                 type="text"
                 required
@@ -337,16 +360,18 @@ async function confirmAndDeleteEvent() {
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.event_date') }}</label>
+              <label for="edit-date" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.event_date') }}</label>
               <input
+                id="edit-date"
                 v-model="editDate"
                 type="date"
                 class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.budget') }}</label>
+              <label for="edit-budget" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.budget') }}</label>
               <input
+                id="edit-budget"
                 v-model="editBudget"
                 type="text"
                 :placeholder="t('admin.budget_placeholder')"
@@ -356,9 +381,10 @@ async function confirmAndDeleteEvent() {
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.description') }}</label>
+            <label for="edit-description" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.description') }}</label>
             <textarea
-              v-model="editDescription"
+              id="edit-description"
+                v-model="editDescription"
               rows="2"
               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
@@ -413,7 +439,9 @@ async function confirmAndDeleteEvent() {
           class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2"
           @submit.prevent="handleAddParticipant"
         >
+          <label for="new-first-name" class="sr-only">{{ t('admin.first_name') }}</label>
           <input
+            id="new-first-name"
             ref="firstNameInput"
             v-model="newFirstName"
             type="text"
@@ -422,7 +450,9 @@ async function confirmAndDeleteEvent() {
             :placeholder="t('admin.first_name')"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
+          <label for="new-last-name" class="sr-only">{{ t('admin.last_name') }}</label>
           <input
+            id="new-last-name"
             v-model="newLastName"
             type="text"
             required
@@ -430,7 +460,9 @@ async function confirmAndDeleteEvent() {
             :placeholder="t('admin.last_name')"
             class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
+          <label for="new-email" class="sr-only">{{ t('admin.email') }}</label>
           <input
+            id="new-email"
             v-model="newEmail"
             type="email"
             required
@@ -440,9 +472,10 @@ async function confirmAndDeleteEvent() {
           />
           <button
             type="submit"
-            class="min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 cursor-pointer"
+            :disabled="adding"
+            class="min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
           >
-            {{ t('admin.add_btn') }}
+            {{ adding ? t('common.loading') : t('admin.add_btn') }}
           </button>
         </form>
 
@@ -454,19 +487,25 @@ async function confirmAndDeleteEvent() {
             class="rounded-xl border border-slate-200 p-4 flex flex-col gap-3"
           >
             <div v-if="editingParticipantId === p.id" class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <label :for="'edit-part-first-name-' + p.id" class="sr-only">{{ t('admin.first_name') }}</label>
               <input
+                :id="'edit-part-first-name-' + p.id"
                 v-model="editPartFirstName"
                 data-testid="edit-participant-first-name"
                 type="text"
                 class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
+              <label :for="'edit-part-last-name-' + p.id" class="sr-only">{{ t('admin.last_name') }}</label>
               <input
+                :id="'edit-part-last-name-' + p.id"
                 v-model="editPartLastName"
                 data-testid="edit-participant-last-name"
                 type="text"
                 class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
+              <label :for="'edit-part-email-' + p.id" class="sr-only">{{ t('admin.email') }}</label>
               <input
+                :id="'edit-part-email-' + p.id"
                 v-model="editPartEmail"
                 data-testid="edit-participant-email"
                 type="email"
@@ -797,5 +836,6 @@ async function confirmAndDeleteEvent() {
         </template>
       </DialogModal>
     </template>
+    <p v-else role="status" class="text-center text-sm text-slate-600">{{ t('common.loading') }}</p>
   </div>
 </template>

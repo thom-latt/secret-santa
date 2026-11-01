@@ -131,8 +131,9 @@ async function confirmDelete() {
       <h1 class="text-xl font-bold text-slate-900 mb-4">{{ t('superadmin.login_title') }}</h1>
       <form data-testid="superadmin-login-form" class="space-y-4" @submit.prevent="handleLogin">
         <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.email') }}</label>
+          <label for="login-email" class="block text-sm font-medium text-slate-700 mb-1">{{ t('admin.email') }}</label>
           <input
+            id="login-email"
             v-model="loginEmail"
             type="email"
             required
@@ -140,15 +141,16 @@ async function confirmDelete() {
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('superadmin.password') }}</label>
+          <label for="login-password" class="block text-sm font-medium text-slate-700 mb-1">{{ t('superadmin.password') }}</label>
           <input
+            id="login-password"
             v-model="loginPassword"
             type="password"
             required
             class="w-full min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
-        <p v-if="loginError" class="text-sm text-red-600 font-medium">{{ loginError }}</p>
+        <p v-if="loginError" role="alert" class="text-sm text-red-600 font-medium">{{ loginError }}</p>
         <button
           type="submit"
           class="w-full min-h-[44px] rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 cursor-pointer"
@@ -188,7 +190,7 @@ async function confirmDelete() {
       <p v-if="statusMessage" data-testid="superadmin-status-message" class="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-800 font-medium">
         {{ statusMessage }}
       </p>
-      <p v-if="actionError" data-testid="superadmin-action-error" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
+      <p v-if="actionError" role="alert" data-testid="superadmin-action-error" class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-medium">
         {{ actionError }}
       </p>
 

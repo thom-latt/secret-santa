@@ -90,7 +90,8 @@
     "feasibility_reason_cannot_receive": "Personne ne peut offrir à {name} : trop d'exclusions.",
     "feasibility_reason_too_few_partners": "{name} a moins de 2 partenaires possibles : le tirage imposerait un échange mutuel.",
     "feasibility_reason_reciprocal_only": "Les exclusions rendent le tirage impossible sans échanges mutuels.",
-    "feasibility_missing": "Encore {count} participant(s) nécessaire(s) (minimum 3)"
+    "feasibility_missing": "Encore {count} participant(s) nécessaire(s) (minimum 3)",
+    "email_changed_notice": "Le lien envoyé précédemment à {name} ne fonctionne plus. Utilisez « Renvoyer l'email » pour qu'il ou elle reçoive le nouveau."
   },
   "participant": {
     "welcome": "Bonjour {name}",
@@ -146,7 +147,8 @@
     "server_error_desc": "Une erreur inattendue s'est produite. Veuillez réessayer dans un instant.",
     "retry": "Réessayer",
     "back_home": "Retour à l'accueil",
-    "loading": "Chargement..."
+    "loading": "Chargement...",
+    "resend_links": "Renvoyer mes liens"
   },
   "privacy": {
     "title": "Politique de confidentialité",
