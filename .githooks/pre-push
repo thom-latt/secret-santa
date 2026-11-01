@@ -4,33 +4,30 @@ set -eu
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-echo "==> [pre-push] Frontend typecheck, tests & build..."
-npm --prefix web run typecheck
-npm --prefix web test
-npm --prefix web run build
+RT="${CONTAINER_RUNTIME:-$(command -v podman >/dev/null 2>&1 && echo podman || echo docker)}"
 
-echo "==> [pre-push] Backend vet & tests..."
-go vet ./...
-go test -race ./...
+echo "==> [pre-push] Lint & tests (containerized)..."
+make lint
+make test
 
-echo "==> [pre-push] Docker build & container smoke check..."
+echo "==> [pre-push] Image build & container smoke check..."
 IMAGE_TAG="secret-santa:pre-push"
 CONTAINER_NAME="santa-smoke-$$"
 
 cleanup() {
-  docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  "$RT" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-docker build -t "$IMAGE_TAG" .
+"$RT" build -t "$IMAGE_TAG" .
 
-docker run -d --name "$CONTAINER_NAME" \
+"$RT" run -d --name "$CONTAINER_NAME" \
   -p 127.0.0.1:0:8080 \
   -e APP_ENV=development \
   -e APP_BASE_URL=http://localhost:8080 \
   "$IMAGE_TAG" >/dev/null
 
-HOST_PORT="$(docker port "$CONTAINER_NAME" 8080/tcp | head -n 1 | awk -F: '{print $NF}')"
+HOST_PORT="$("$RT" port "$CONTAINER_NAME" 8080/tcp | head -n 1 | awk -F: '{print $NF}')"
 
 healthy=0
 for _ in $(seq 1 15); do
@@ -42,8 +39,8 @@ for _ in $(seq 1 15); do
 done
 
 if [ "$healthy" -ne 1 ]; then
-  echo "ERROR: Docker container failed healthcheck" >&2
-  docker logs "$CONTAINER_NAME" >&2 || true
+  echo "ERROR: Container failed healthcheck" >&2
+  "$RT" logs "$CONTAINER_NAME" >&2 || true
   exit 1
 fi
 

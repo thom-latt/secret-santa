@@ -6,3 +6,4 @@ data
 *.db-wal
 .git
 .env
+.cache

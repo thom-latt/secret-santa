@@ -1,0 +1,22 @@
+{
+  "name": "Secret Santa",
+  "build": { "dockerfile": "Dockerfile" },
+  "containerEnv": { "DEVCONTAINER": "true" },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  // Rootless Podman: map the host user to the same uid inside the container.
+  "runArgs": ["--userns=keep-id"],
+  "forwardPorts": [8080, 5173],
+  "postCreateCommand": "make install",
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go", "Vue.volar", "bradlc.vscode-tailwindcss", "EditorConfig.EditorConfig"],
+      "settings": {
+        "go.toolsManagement.autoUpdate": false,
+        "editor.formatOnSave": true,
+        "[go]": { "editor.defaultFormatter": "golang.go" },
+        "typescript.tsdk": "web/node_modules/typescript/lib"
+      }
+    }
+  }
+}

@@ -10,7 +10,7 @@ Privacy-first, passwordless, bilingual (French / English) Secret Santa web appli
    ```bash
    cp .env.example .env
    ```
-2. Edit `.env` for production (`APP_ENV=production`, `APP_BASE_URL=https://santa.mydomain.com`, `SUPER_ADMIN_EMAIL`, `SESSION_SECRET`, and `SMTP_*` settings) and set the Super Admin password hash via `make set-password` (or `./secret-santa set-password`).
+2. Edit `.env` for production (`APP_ENV=production`, `APP_BASE_URL=https://santa.mydomain.com`, `SUPER_ADMIN_EMAIL`, `SESSION_SECRET`, and `SMTP_*` settings) and set the Super Admin password hash via `make set-password`.
 3. Start the container:
    ```bash
    docker compose up -d
@@ -28,7 +28,7 @@ Privacy-first, passwordless, bilingual (French / English) Secret Santa web appli
 | `APP_BASE_URL` | `http://localhost:8080` | Mandatory in production (e.g., `https://santa.mydomain.com`); used to build magic links |
 | `DB_PATH` | `./data/secret-santa.db` | Path to the SQLite database file (`/data/secret-santa.db` in Docker) |
 | `SUPER_ADMIN_EMAIL` | `admin@example.com` | Email for `/superadmin` login and SMTP test target |
-| `SUPER_ADMIN_PASSWORD_HASH` | — | PBKDF2-HMAC-SHA256 password hash for `/superadmin` (set via `make set-password` or `./secret-santa set-password`) |
+| `SUPER_ADMIN_PASSWORD_HASH` | — | PBKDF2-HMAC-SHA256 password hash for `/superadmin` (set via `make set-password`) |
 | `SESSION_SECRET` | — | Secret key used to sign the `HttpOnly; SameSite=Strict` Super Admin cookie (required in production) |
 | `SMTP_HOST` | — | SMTP server hostname (required in production) |
 | `SMTP_PORT` | `587` | SMTP server port (`587`, `465`, or `25`) |
@@ -62,20 +62,22 @@ docker compose start
 
 ## Local Development
 
-- **Frontend (`web/`)**:
-  ```bash
-  cd web
-  npm ci
-  npm run typecheck
-  npm test
-  npm run build
-  ```
-- **Backend (`Go`)**:
-  ```bash
-  go vet ./...
-  go test -race -v ./...
-  go run ./cmd/server
-  ```
+Prerequisites: **`make` and Podman** (or Docker) — nothing else (no Go, no Node). Every task runs in a container:
+
+```bash
+make dev                      # backend :8080 + Vite HMR :5173
+make install                  # install dependencies
+make lint [SCOPE=frontend|backend]   # typecheck / go vet (default: both)
+make test [SCOPE=frontend|backend]   # Vitest / go test -race (default: both)
+make build                    # build the production image
+make set-password             # write the Super Admin hash to .env
+make clean
+```
+`make test-backend`, `make lint-frontend`, etc. also work. Set `RT=docker` to force a runtime.
+
+### Dev Container (editor with Go + Vue tooling)
+Open the folder in VS Code and choose **Reopen in Container** (`.devcontainer/`). It provides Go, Node, gopls and Volar; the same `make dev`, `make test`, `make lint` commands run natively inside it, and ports 8080/5173 are forwarded. With Podman, set `"dev.containers.dockerPath": "podman"` in your VS Code settings. With Docker, remove `"--userns=keep-id"` from `runArgs` in `devcontainer.json`.
+
   In `APP_ENV=development` (default), **no SMTP network connection is ever opened** (even if `SMTP_*` variables are set); all emails and clickable magic links are handled by `ConsoleMockMailer` (`MockMailer`) and printed to the terminal logs.
 
 ---
