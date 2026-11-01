@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,47 +58,16 @@ func (s *Server) requireSuperAdmin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (s *Server) checkLoginRateLimit(ip string) bool {
-	s.loginMu.Lock()
-	defer s.loginMu.Unlock()
-	cutoff := time.Now().Add(-1 * time.Minute)
-	recent := s.loginAttempts[ip][:0]
-	for _, t := range s.loginAttempts[ip] {
-		if t.After(cutoff) {
-			recent = append(recent, t)
-		}
-	}
-	if len(recent) == 0 {
-		delete(s.loginAttempts, ip)
-	} else {
-		s.loginAttempts[ip] = recent
-	}
-	return len(recent) < 10
-}
-
-func (s *Server) recordLoginFailure(ip string) {
-	s.loginMu.Lock()
-	defer s.loginMu.Unlock()
-	s.loginAttempts[ip] = append(s.loginAttempts[ip], time.Now())
-}
-
-func clientIP(r *http.Request) string {
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && host != "" {
-		return host
-	}
-	return r.RemoteAddr
-}
-
 func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
-	if !s.checkLoginRateLimit(ip) {
+	ip := s.clientIP(r)
+	if s.limiter.count("login:"+ip, time.Minute) >= loginFailureLimit {
 		writeError(w, http.StatusTooManyRequests, "too many login attempts, please try again later")
 		return
 	}
 
 	var req SuperAdminLoginRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
@@ -110,7 +78,7 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	passMatch := config.VerifyPassword(req.Password, s.cfg.SuperAdminPasswordHash)
 
 	if emailMatch != 1 || !passMatch {
-		s.recordLoginFailure(ip)
+		s.limiter.record("login:" + ip)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -132,7 +100,11 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSuperAdminLogout(w http.ResponseWriter, r *http.Request) {
-	s.sessionEpoch.Add(1)
+	// Only a valid session may invalidate sessions: the epoch is global, so an
+	// unauthenticated call must not be able to log the super admin out.
+	if c, err := r.Cookie(superAdminCookieName); err == nil && s.verifySuperAdminToken(c.Value) {
+		s.sessionEpoch.Add(1)
+	}
 	// #nosec G124 -- Secure is enforced in production and on https:// URLs via IsSecureCookie()
 	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(w, &http.Cookie{
@@ -186,8 +158,8 @@ func (s *Server) handleSuperAdminOverview(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleSuperAdminUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req SuperAdminSettingsRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if err := s.repo.SetAllowPublicEventCreation(req.AllowPublicEventCreation); err != nil {
@@ -199,8 +171,8 @@ func (s *Server) handleSuperAdminUpdateSettings(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleSuperAdminInviteOrganizer(w http.ResponseWriter, r *http.Request) {
 	var req CreateEventRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	req.Title = strings.TrimSpace(req.Title)

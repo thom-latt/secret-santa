@@ -36,6 +36,7 @@ Privacy-first, passwordless, bilingual (French / English) Secret Santa web appli
 | `SMTP_PASS` | — | SMTP password |
 | `SMTP_FROM` | `Secret Santa <noreply@example.com>` | `From` header and envelope sender address |
 | `SMTP_TLS_MODE` | `starttls` | `starttls` (port 587), `tls` (implicit TLS, port 465), or `none` (port 25 / local relay) |
+| `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy that sets `X-Forwarded-For`: rate limiting then uses that address instead of the proxy's. Leave `false` if the app is directly exposed (the header is client-controlled) |
 
 ---
 

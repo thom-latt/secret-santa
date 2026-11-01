@@ -38,7 +38,7 @@ async function handleCreate() {
       email: email.value,
       locale: locale.value,
     })
-    await router.push(`/admin/events/${res.admin_token}`)
+    await router.push({ name: 'event-admin', params: { token: res.admin_token } })
   } catch (e: unknown) {
     createError.value = e instanceof Error ? e.message : String(e)
   } finally {

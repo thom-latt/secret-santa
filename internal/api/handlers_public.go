@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"secret-santa/internal/mailer"
 )
@@ -18,6 +19,10 @@ func (s *Server) handleGetPublicConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.take("create:"+s.clientIP(r), createEventLimit, time.Hour) {
+		writeError(w, http.StatusTooManyRequests, "too many events created from this address, please try again later")
+		return
+	}
 	allow, err := s.repo.GetAllowPublicEventCreation()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load settings")
@@ -29,8 +34,8 @@ func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req CreateEventRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
@@ -55,7 +60,7 @@ func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request)
 		EventTitle:    ev.Title,
 		AdminToken:    ev.AdminToken,
 	})
-	_ = s.mailer.Send(msg)
+	runBackground(func() { _ = s.mailer.Send(msg) })
 
 	writeJSON(w, http.StatusCreated, CreateEventResponse{
 		ID:         ev.ID,
@@ -65,9 +70,13 @@ func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleRecoverLinks(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.take("recover-ip:"+s.clientIP(r), recoverIPLimit, 10*time.Minute) {
+		writeError(w, http.StatusTooManyRequests, "too many requests, please try again later")
+		return
+	}
 	var req RecoverLinksRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -76,8 +85,11 @@ func (s *Server) handleRecoverLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-address throttle: beyond the limit the request is silently dropped
+	// (same generic answer), so the endpoint cannot be used to flood a mailbox
+	// nor to probe which addresses are registered.
 	orgLinks, partLinks, err := s.repo.FindLinksByEmail(email)
-	if err == nil && (len(orgLinks) > 0 || len(partLinks) > 0) {
+	if err == nil && (len(orgLinks) > 0 || len(partLinks) > 0) && s.limiter.take("recover-email:"+email, recoverEmailLimit, time.Hour) {
 		locale := req.Locale
 		if locale != "en" && locale != "fr" {
 			if len(orgLinks) > 0 {
@@ -105,8 +117,10 @@ func (s *Server) handleRecoverLinks(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
+		// Sent after the response so that response time does not reveal
+		// whether the address is registered.
 		msg := mailer.BuildRecoveryEmail(s.cfg.AppBaseURL, locale, email, orgItems, partItems)
-		_ = s.mailer.Send(msg)
+		runBackground(func() { _ = s.mailer.Send(msg) })
 	}
 
 	genericMsg := "Si un événement est associé à cette adresse, un email a été envoyé."

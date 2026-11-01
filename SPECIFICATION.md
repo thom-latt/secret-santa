@@ -35,7 +35,9 @@ flowchart LR
   - Direct architecture without an intermediate service layer: handlers in `internal/api` directly call `internal/db`, `internal/draw`, and `internal/mailer`.
   - **Pure Go, CGO-free** SQLite driver (`modernc.org/sqlite`) enabling straightforward cross-compilation (`amd64` and `arm64` for all Synology, QNAP, TrueNAS, and Raspberry Pi NAS models) and a minimalist final container (`alpine` or `distroless`).
   - Compiled frontend build embedded directly into the Go binary via `embed.FS` (exposed by `web/embed.go`), with SPA fallback to `index.html` only for non-API routes (`!/api/*`) without a static asset file extension.
-  - No built-in application-level rate limiting (delegated to the front-facing Nginx reverse proxy).
+  - Application-level, in-memory rate limiting as a second line of defence behind the front-facing Nginx (which remains the primary one): Super Admin login (10 failed attempts per client per minute), public event creation (20 per client per hour), link recovery (10 requests per client per 10 minutes and 3 emails per address per hour; beyond the per-address limit the answer stays the same generic `200`, so the throttle is not observable). Clients are identified by the TCP peer address, or by the right-most `X-Forwarded-For` entry when `TRUST_PROXY=true` (to be enabled only behind a reverse proxy that sets that header).
+  - Strict JSON decoding of every request body: unknown fields, trailing data and bodies over 64 KiB are rejected (`400`, or `413` for oversized bodies).
+  - Emails triggered by public endpoints (event creation, link recovery) are sent after the HTTP response, so the response time never reveals whether an address is registered; pending sends are awaited on graceful shutdown. Draw and resend endpoints send their batch synchronously (bounded to a 90 s budget, unsent messages being reported as failed and resendable) and extend the response write deadline accordingly.
   - Global HTTP security headers: `Referrer-Policy: no-referrer` (prevents any leakage of URL tokens to external merchant websites linked in wishlists), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`.
 - **Database**: **SQLite**
   - Stored in a single file mounted on a persistent Docker volume on the NAS local disk (`/data/secret-santa.db`) to survive container restarts and updates.
@@ -324,7 +326,7 @@ flowchart TD
   - *As the* NAS owner (Super Administrator),
   - *I want* to log in to `/superadmin` using the credentials defined in my environment variables (`SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD`),
   - *So that* I can securely manage my Secret Santa instance.
-  - **Acceptance Criteria**: Authentication via a signed `HttpOnly; SameSite=Strict` cookie (with the `Secure` attribute enabled whenever `APP_BASE_URL` uses `https://` or `APP_ENV=production`); constant-time comparison of SHA-256 digests (`crypto/subtle.ConstantTimeCompare` over `sha256.Sum256`) so neither the content nor the length of the password is leaked.
+  - **Acceptance Criteria**: Logging out requires a valid session (an unauthenticated call never invalidates anyone's session); a session is also invalidated by a password change. Authentication via a signed `HttpOnly; SameSite=Strict` cookie (with the `Secure` attribute enabled whenever `APP_BASE_URL` uses `https://` or `APP_ENV=production`); constant-time comparison of SHA-256 digests (`crypto/subtle.ConstantTimeCompare` over `sha256.Sum256`) so neither the content nor the length of the password is leaked.
 
 - **US-6.2 — Enabling / Disabling Public Event Creation**
   - *As a* Super Administrator,
@@ -425,7 +427,8 @@ Every feature and User Story will be covered by automated tests:
      - 5 people where a 5-cycle is impossible (since $5$ cannot be partitioned into integers $\ge 3$) $\rightarrow$ rejected (`ErrNoValidDraw`).
    - **Anti-DoS performance test**: heavily constrained and unsatisfiable $N = 50$ graph $\rightarrow$ returns `ErrNoValidDraw` in under `600ms`.
 
-2. **Email System Unit Tests (`internal/mailer/mailer_test.go`)**:
+2. **Email System Unit Tests (`internal/mailer/`)**:
+   - `smtp_server_test.go` runs `SMTPMailer` against a scriptable fake SMTP server: message format and MIME encoding, dot-stuffing, header injection (CR/LF in subject and recipient), AUTH success/failure, STARTTLS and implicit TLS (trusted and untrusted certificates, no silent plaintext fallback), per-message partial failures on one pooled connection, connection dropped mid-batch, unreachable server, invalid sender, and the batch time budget.
    - Guarantee that in `APP_ENV=development` mode, the `NewMailer()` factory always instantiates the `MockMailer` and opens no network connection.
    - Verify rendering of email templates in French (`fr`) and English (`en`) with `APP_BASE_URL` (magic links, title, budget, date).
 
@@ -440,8 +443,12 @@ Every feature and User Story will be covered by automated tests:
      - Adding/editing/deleting wishlist items (automatic `https://` prefixing, rejection of `javascript:alert(1)` with `400 Bad Request`) $\rightarrow$ updates the "Filled wishlist" status on the admin side and is visible only to the Secret Santa who revealed their target.
      - Post-draw flexibility: editing the event's Title/Date/Budget/Description and correcting a participant's First Name/Last Name/Email (with synchronization of `events.organizer_*` if `is_organizer = true`, and rotation of `participant_token` + resetting `link_clicked_at`/`email_sent_at`/`email_error` to `NULL` if the email changes) + resending their individual email.
      - Verification of the `Referrer-Policy: no-referrer` header and cascading event deletion.
+     - **Hardening regression tests** (`internal/api/hardening_test.go`): unauthenticated logout, forged/expired/foreign Super Admin cookies, rate limits (including behind a trusted proxy), strict JSON decoding, emails sent after the response, concurrent draws and concurrent edits during a draw (every participant of a drawn event has exactly one valid target and no exclusion is violated), cross-event authorization matrix (admin tokens, participant tokens, exclusion and wishlist IDs from another event), all security headers on API and static responses, cross-origin request rejection, cookie attributes, input-length boundaries, URL scheme validation on add and update, assignments never leaking before reveal, and clean JSON `500` answers on every route when the database is unavailable.
+
+3b. **Database and configuration tests**: `internal/db/repository_test.go` (draw re-validation against concurrent changes, draft-only mutations enforced in SQL, directional exclusion semantics, foreign-key cascades, unique indexes, refusal to open a pre-directional schema, schema version), `internal/config/config_test.go` (every production rule, `.env` parsing precedence, password hash validation, `set-password` file rewriting) and `cmd/server/main_test.go` (`set-password` command).
 
 4. **Frontend Pinia Stores and Component Unit Tests (`web/src/__tests__/`)**:
+   - `stores.spec.ts` runs the real stores against a mocked `fetch` and pins the exact fields sent to the (strictly decoding) API, URL encoding, error messages (including `429`) and resilience to non-JSON proxy error pages; `views.spec.ts` and `event-admin.spec.ts` drive the views through the real stores (error paths, double-submit protection, XSS-safe rendering, `http(s)`-only links, directional exclusion form).
    - Tests using **Vitest**, **@pinia/testing**, and **@vue/test-utils** covering Pinia stores and main views, FR/EN language switching, absence of the target's name and wishlist from the DOM before clicking "Discover" (`POST /reveal`), and wishlist management.
 
 ---

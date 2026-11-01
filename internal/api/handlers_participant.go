@@ -190,8 +190,8 @@ func (s *Server) handleAddWishlistItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpsertWishlistItemRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
@@ -233,8 +233,8 @@ func (s *Server) handleUpdateWishlistItem(w http.ResponseWriter, r *http.Request
 	}
 
 	var req UpsertWishlistItemRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 

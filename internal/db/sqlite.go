@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,10 +108,42 @@ func Open(dbPath string) (*sql.DB, error) {
 		_ = os.Chmod(dbPath, 0o600)
 	}
 
+	if err := checkLegacySchema(conn); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
 	if _, err := conn.Exec(schemaSQL); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("migrate sqlite schema: %w", err)
 	}
 
+	if _, err := conn.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("set schema version: %w", err)
+	}
+
 	return conn, nil
+}
+
+// schemaVersion is stored in PRAGMA user_version. Version 1 introduced
+// directional exclusions.
+const schemaVersion = 1
+
+// checkLegacySchema refuses to start on a database created before exclusions
+// became directional: its CHECK (participant_a_id < participant_b_id) would
+// make inserting the B -> A direction fail with an opaque error.
+func checkLegacySchema(conn *sql.DB) error {
+	var ddl string
+	err := conn.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'exclusions'`).Scan(&ddl)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect sqlite schema: %w", err)
+	}
+	if strings.Contains(strings.ReplaceAll(ddl, " ", ""), "participant_a_id<participant_b_id") {
+		return errors.New("database schema is outdated (exclusions were mutual, they are now directional): delete the database file or migrate the exclusions table manually")
+	}
+	return nil
 }

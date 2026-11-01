@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { readJson } from './http'
 
 export interface AdminParticipant {
   id: string
@@ -60,7 +61,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
         event.value = null
         return
       }
-      const data = await res.json().catch(() => ({}))
+      const data = await readJson(res)
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load event')
       }
@@ -87,7 +88,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to update event')
     }
@@ -103,7 +104,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to add participant')
     }
@@ -123,7 +124,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
         body: JSON.stringify(payload),
       }
     )
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to update participant')
     }
@@ -135,7 +136,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
       `/api/admin/events/${encodeURIComponent(adminToken)}/participants/${encodeURIComponent(participantId)}`,
       { method: 'DELETE' }
     )
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to delete participant')
     }
@@ -157,7 +158,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
         reciprocal,
       }),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to add exclusion')
     }
@@ -169,7 +170,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
       `/api/admin/events/${encodeURIComponent(adminToken)}/exclusions/${encodeURIComponent(exclusionId)}`,
       { method: 'DELETE' }
     )
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to delete exclusion')
     }
@@ -180,7 +181,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     const res = await fetch(`/api/admin/events/${encodeURIComponent(adminToken)}/draw`, {
       method: 'POST',
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to execute draw')
     }
@@ -192,7 +193,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
       `/api/admin/events/${encodeURIComponent(adminToken)}/participants/${encodeURIComponent(participantId)}/resend`,
       { method: 'POST' }
     )
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to resend email')
     }
@@ -203,7 +204,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     const res = await fetch(`/api/admin/events/${encodeURIComponent(adminToken)}/resend-failed`, {
       method: 'POST',
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to resend failed emails')
     }
@@ -214,7 +215,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     const res = await fetch(`/api/admin/events/${encodeURIComponent(adminToken)}`, {
       method: 'DELETE',
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to delete event')
     }

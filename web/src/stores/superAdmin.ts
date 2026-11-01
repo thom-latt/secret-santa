@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { readJson } from './http'
 
 export interface SuperAdminEventSummary {
   id: string
@@ -31,7 +32,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
         authenticated.value = false
         return
       }
-      const data = await res.json()
+      const data = await readJson(res)
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load overview')
       }
@@ -50,7 +51,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Invalid credentials')
     }
@@ -69,7 +70,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ allow_public_event_creation: allow }),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to update setting')
     }
@@ -88,7 +89,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to invite organizer')
     }
@@ -97,7 +98,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
 
   async function testSmtp() {
     const res = await fetch('/api/superadmin/test-smtp', { method: 'POST' })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'SMTP test failed')
     }
@@ -108,7 +109,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
     const res = await fetch(`/api/superadmin/events/${encodeURIComponent(eventId)}/resend-admin`, {
       method: 'POST',
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to resend link')
     }
@@ -118,7 +119,7 @@ export const useSuperAdminStore = defineStore('superAdmin', () => {
     const res = await fetch(`/api/superadmin/events/${encodeURIComponent(eventId)}`, {
       method: 'DELETE',
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to delete event')
     }

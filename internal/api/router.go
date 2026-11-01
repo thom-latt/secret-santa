@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/mail"
@@ -9,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 	"unicode/utf8"
 
 	"secret-santa/internal/config"
@@ -18,22 +19,45 @@ import (
 )
 
 type Server struct {
-	cfg           *config.Config
-	repo          *db.Repository
-	mailer        mailer.Mailer
-	staticFS      fs.FS
-	sessionEpoch  atomic.Uint64
-	loginMu       sync.Mutex
-	loginAttempts map[string][]time.Time
+	cfg          *config.Config
+	repo         *db.Repository
+	mailer       mailer.Mailer
+	staticFS     fs.FS
+	sessionEpoch atomic.Uint64
+	limiter      *rateLimiter
 }
+
+// Rate limits (per client IP unless noted).
+const (
+	loginFailureLimit = 10 // failed super-admin logins per minute
+	createEventLimit  = 20 // event creations per hour
+	recoverIPLimit    = 10 // recovery requests per 10 minutes
+	recoverEmailLimit = 3  // recovery emails per address per hour
+)
+
+var backgroundTasks sync.WaitGroup
+
+// runBackground runs f in a goroutine tracked by WaitForBackgroundTasks.
+// Tests replace it to run tasks synchronously.
+var runBackground = func(f func()) {
+	backgroundTasks.Add(1)
+	go func() {
+		defer backgroundTasks.Done()
+		f()
+	}()
+}
+
+// WaitForBackgroundTasks blocks until queued background work (emails sent
+// after the HTTP response) has finished, so a graceful shutdown does not drop it.
+func WaitForBackgroundTasks() { backgroundTasks.Wait() }
 
 func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticFS fs.FS) http.Handler {
 	s := &Server{
-		cfg:           cfg,
-		repo:          repo,
-		mailer:        m,
-		staticFS:      staticFS,
-		loginAttempts: make(map[string][]time.Time),
+		cfg:      cfg,
+		repo:     repo,
+		mailer:   m,
+		staticFS: staticFS,
+		limiter:  newRateLimiter(),
 	}
 
 	mux := http.NewServeMux()
@@ -116,6 +140,8 @@ func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 	return withSecurityHeaders(cfg, cop.Handler(mux))
 }
 
+const maxJSONBodyBytes = 64 << 10
+
 func withSecurityHeaders(cfg *config.Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -143,9 +169,31 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-func decodeJSON(r *http.Request, dst any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 64<<10))
-	return dec.Decode(dst)
+// decodeJSON strictly decodes a single JSON object: unknown fields, trailing
+// data and bodies over 64 KiB are rejected.
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("unexpected data after JSON body")
+		}
+		return err
+	}
+	return nil
+}
+
+// writeDecodeError maps a decodeJSON failure to 413 (too large) or 400.
+func writeDecodeError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		return
+	}
+	writeError(w, http.StatusBadRequest, "invalid request body")
 }
 
 func isValidTextLen(s string, minRunes, maxRunes int) bool {

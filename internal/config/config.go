@@ -36,6 +36,9 @@ type Config struct {
 	SMTPPass               string
 	SMTPFrom               string
 	SMTPTLSMode            string
+	// TrustProxy makes rate limiting use the X-Forwarded-For header set by a
+	// trusted reverse proxy instead of the TCP peer address.
+	TrustProxy bool
 }
 
 func Load() (*Config, error) {
@@ -90,6 +93,11 @@ func Load() (*Config, error) {
 		return nil, errors.New("SUPER_ADMIN_PASSWORD_HASH must be a valid pbkdf2_sha256 hash (run './secret-santa set-password' or 'make set-password')")
 	}
 
+	trustProxy, err := parseBoolEnv("TRUST_PROXY", false)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		AppEnv:                 appEnv,
 		Port:                   port,
@@ -104,6 +112,7 @@ func Load() (*Config, error) {
 		SMTPPass:               getEnv("SMTP_PASS", ""),
 		SMTPFrom:               strings.TrimSpace(getEnv("SMTP_FROM", "Secret Santa <noreply@example.com>")),
 		SMTPTLSMode:            tlsMode,
+		TrustProxy:             trustProxy,
 	}
 
 	if appEnv == "production" {
@@ -210,6 +219,19 @@ func SetEnvPasswordHash(path, hash string) error {
 
 func (c *Config) IsSecureCookie() bool {
 	return c.AppEnv == "production" || strings.HasPrefix(strings.ToLower(c.AppBaseURL), "https://")
+}
+
+func parseBoolEnv(key string, fallback bool) (bool, error) {
+	raw := strings.ToLower(strings.TrimSpace(getEnv(key, "")))
+	switch raw {
+	case "":
+		return fallback, nil
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("invalid %s %q: must be true or false", key, raw)
 }
 
 func getEnv(key, fallback string) string {

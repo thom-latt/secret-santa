@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { readJson } from './http'
 
 export interface WishlistItem {
   id: string
@@ -45,7 +46,7 @@ export const useParticipantStore = defineStore('participant', () => {
         data.value = null
         return
       }
-      const json = await res.json().catch(() => ({}))
+      const json = await readJson(res)
       if (!res.ok) {
         throw new Error(json.error || 'Failed to load participant page')
       }
@@ -61,7 +62,7 @@ export const useParticipantStore = defineStore('participant', () => {
     const res = await fetch(`/api/p/${encodeURIComponent(token)}/reveal`, {
       method: 'POST',
     })
-    const json = await res.json()
+    const json = await readJson(res)
     if (!res.ok) {
       throw new Error(json.error || 'Failed to reveal target')
     }
@@ -74,7 +75,7 @@ export const useParticipantStore = defineStore('participant', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const json = await res.json()
+    const json = await readJson(res)
     if (!res.ok) {
       throw new Error(json.error || 'Failed to add wishlist item')
     }
@@ -94,7 +95,7 @@ export const useParticipantStore = defineStore('participant', () => {
         body: JSON.stringify(payload),
       }
     )
-    const json = await res.json()
+    const json = await readJson(res)
     if (!res.ok) {
       throw new Error(json.error || 'Failed to update wishlist item')
     }
@@ -106,7 +107,7 @@ export const useParticipantStore = defineStore('participant', () => {
       `/api/p/${encodeURIComponent(token)}/wishlist/${encodeURIComponent(itemId)}`,
       { method: 'DELETE' }
     )
-    const json = await res.json()
+    const json = await readJson(res)
     if (!res.ok) {
       throw new Error(json.error || 'Failed to delete wishlist item')
     }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"secret-santa/internal/db"
 	"secret-santa/internal/draw"
@@ -67,7 +68,7 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 		}
 	} else {
 		// nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
-	res, solveErr := draw.Solve(partIDs, exPairs)
+		res, solveErr := draw.Solve(partIDs, exPairs)
 		diag := res.Diagnostic
 		for id, name := range nameByID {
 			diag = strings.ReplaceAll(diag, id, name)
@@ -139,8 +140,8 @@ func (s *Server) handleUpdateAdminEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req UpdateEventRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	req.Title = strings.TrimSpace(req.Title)
@@ -209,8 +210,8 @@ func (s *Server) handleAddParticipant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpsertParticipantRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	req.FirstName = strings.TrimSpace(req.FirstName)
@@ -223,6 +224,10 @@ func (s *Server) handleAddParticipant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = s.repo.AddParticipant(ev.ID, req.FirstName, req.LastName, req.Email)
+	if errors.Is(err, db.ErrAlreadyDrawn) {
+		writeError(w, http.StatusConflict, "cannot add participants after the draw")
+		return
+	}
 	if errors.Is(err, db.ErrDuplicateEmail) {
 		writeError(w, http.StatusConflict, "this email is already in the participant list")
 		return
@@ -255,8 +260,8 @@ func (s *Server) handleUpdateParticipant(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req UpsertParticipantRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	req.FirstName = strings.TrimSpace(req.FirstName)
@@ -315,6 +320,10 @@ func (s *Server) handleDeleteParticipant(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := s.repo.DeleteParticipant(ev.ID, participantID); err != nil {
+		if errors.Is(err, db.ErrAlreadyDrawn) {
+			writeError(w, http.StatusConflict, "cannot delete participants after the draw")
+			return
+		}
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "participant not found")
 			return
@@ -353,12 +362,16 @@ func (s *Server) handleAddExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateExclusionRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
 	_, err = s.repo.AddExclusion(ev.ID, req.ParticipantAID, req.ParticipantBID, req.Reciprocal)
+	if errors.Is(err, db.ErrAlreadyDrawn) {
+		writeError(w, http.StatusConflict, "cannot add exclusions after the draw")
+		return
+	}
 	if errors.Is(err, db.ErrInvalidInput) {
 		writeError(w, http.StatusBadRequest, "two distinct participants must be selected")
 		return
@@ -435,53 +448,73 @@ func (s *Server) handleDrawEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participants, err := s.repo.ListParticipants(ev.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load participants")
-		return
-	}
-	if len(participants) < 3 {
-		writeError(w, http.StatusBadRequest, "at least 3 participants are required to launch the draw")
-		return
-	}
-
-	exclusions, err := s.repo.ListExclusions(ev.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load exclusions")
-		return
-	}
-
-	partIDs := make([]string, len(participants))
-	nameByID := make(map[string]string, len(participants))
-	for i, p := range participants {
-		partIDs[i] = p.ID
-		nameByID[p.ID] = strings.TrimSpace(p.FirstName + " " + p.LastName)
-	}
-	exPairs := make([]draw.ExclusionPair, len(exclusions))
-	for i, ex := range exclusions {
-		exPairs[i] = draw.ExclusionPair{A: ex.ParticipantAID, B: ex.ParticipantBID}
-	}
-
-	// nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
-	res, solveErr := draw.Solve(partIDs, exPairs)
-	if solveErr != nil {
-		diag := res.Diagnostic
-		for id, name := range nameByID {
-			diag = strings.ReplaceAll(diag, id, name)
+	// Participants and exclusions are read, solved and saved in separate steps;
+	// SaveDraw re-validates the result inside its transaction and reports
+	// ErrDrawStale if the event changed meanwhile, in which case we recompute.
+	var participants []db.Participant
+	const maxDrawAttempts = 3
+	for attempt := 1; ; attempt++ {
+		var err error
+		participants, err = s.repo.ListParticipants(ev.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load participants")
+			return
 		}
-		writeError(w, http.StatusUnprocessableEntity, diag)
-		return
-	}
+		if len(participants) < 3 {
+			writeError(w, http.StatusBadRequest, "at least 3 participants are required to launch the draw")
+			return
+		}
 
-	// Step 1: Atomic SQLite transaction saving status='drawn' and assigned_to_id
-	if err := s.repo.SaveDraw(ev.ID, res.Assignments); err != nil {
+		exclusions, err := s.repo.ListExclusions(ev.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load exclusions")
+			return
+		}
+
+		partIDs := make([]string, len(participants))
+		nameByID := make(map[string]string, len(participants))
+		for i, p := range participants {
+			partIDs[i] = p.ID
+			nameByID[p.ID] = strings.TrimSpace(p.FirstName + " " + p.LastName)
+		}
+		exPairs := make([]draw.ExclusionPair, len(exclusions))
+		for i, ex := range exclusions {
+			exPairs[i] = draw.ExclusionPair{A: ex.ParticipantAID, B: ex.ParticipantBID}
+		}
+
+		// nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
+		res, solveErr := draw.Solve(partIDs, exPairs)
+		if solveErr != nil {
+			diag := res.Diagnostic
+			for id, name := range nameByID {
+				diag = strings.ReplaceAll(diag, id, name)
+			}
+			writeError(w, http.StatusUnprocessableEntity, diag)
+			return
+		}
+
+		// Step 1: Atomic SQLite transaction saving status='drawn' and assigned_to_id
+		err = s.repo.SaveDraw(ev.ID, res.Assignments)
+		if errors.Is(err, db.ErrDrawStale) {
+			if attempt >= maxDrawAttempts {
+				writeError(w, http.StatusConflict, "participants or exclusions kept changing during the draw, please retry")
+				return
+			}
+			continue
+		}
 		if errors.Is(err, db.ErrAlreadyDrawn) {
 			writeError(w, http.StatusConflict, "the draw has already been executed")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to save draw")
-		return
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save draw")
+			return
+		}
+		break
 	}
+
+	// Sending up to 100 emails can outlast the server-wide WriteTimeout.
+	extendWriteDeadline(w)
 
 	// Step 2: Outside SQLite transaction, send batch emails on pooled SMTP connection and record status per participant
 	msgs := make([]mailer.Message, len(participants))
@@ -599,6 +632,7 @@ func (s *Server) handleResendFailedEmails(w http.ResponseWriter, r *http.Request
 	}
 
 	if len(msgs) > 0 {
+		extendWriteDeadline(w)
 		sendErrs := s.mailer.SendBatch(msgs)
 		for i, p := range failedParts {
 			_ = s.repo.RecordEmailStatus(p.ID, sendErrs[i])
@@ -611,4 +645,13 @@ func (s *Server) handleResendFailedEmails(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// emailWriteDeadline is how long handlers that send a batch of emails may take
+// to write their response; it exceeds the mailer's batch budget.
+const emailWriteDeadline = 3 * time.Minute
+
+func extendWriteDeadline(w http.ResponseWriter) {
+	// Best effort: ignored by writers that do not support deadlines (tests).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(emailWriteDeadline))
 }

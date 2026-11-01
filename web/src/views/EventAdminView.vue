@@ -310,7 +310,7 @@ async function confirmAndDeleteEvent() {
           <router-link
             v-if="store.event.status === 'drawn' && store.event.organizer_participates && store.event.organizer_participant_token"
             data-testid="organizer-participant-link"
-            :to="`/p/${store.event.organizer_participant_token}`"
+            :to="{ name: 'participant', params: { token: store.event.organizer_participant_token } }"
             class="inline-flex items-center min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
           >
             {{ t('admin.go_to_my_page') }}

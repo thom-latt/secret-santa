@@ -16,6 +16,9 @@ var (
 	ErrAlreadyDrawn   = errors.New("event already drawn")
 	ErrDuplicateEmail = errors.New("duplicate email in event")
 	ErrInvalidInput   = errors.New("invalid input")
+	// ErrDrawStale means participants or exclusions changed between computing
+	// the draw and saving it; the draw must be recomputed.
+	ErrDrawStale = errors.New("participants or exclusions changed during the draw")
 )
 
 type Event struct {
@@ -395,15 +398,20 @@ func (r *Repository) AddParticipant(eventID, firstName, lastName, email string) 
 		CreatedAt:        time.Now().UTC(),
 	}
 
-	_, err := r.db.Exec(`
+	// The status check and the insert are one statement, so a participant can
+	// never be added to an event that has been drawn in the meantime.
+	res, err := r.db.Exec(`
 		INSERT INTO participants (id, event_id, first_name, last_name, email, is_organizer, participant_token, created_at)
-		VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-	`, p.ID, p.EventID, p.FirstName, p.LastName, p.Email, p.ParticipantToken, p.CreatedAt)
+		SELECT ?, id, ?, ?, ?, 0, ?, ? FROM events WHERE id = ? AND status = 'draft'
+	`, p.ID, p.FirstName, p.LastName, p.Email, p.ParticipantToken, p.CreatedAt, eventID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return nil, ErrDuplicateEmail
 		}
 		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrAlreadyDrawn
 	}
 	return p, nil
 }
@@ -485,6 +493,16 @@ func (r *Repository) DeleteParticipant(eventID, participantID string) error {
 	}
 	defer tx.Rollback()
 
+	var status string
+	if err := tx.QueryRow(`SELECT status FROM events WHERE id = ?`, eventID).Scan(&status); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if status != "draft" {
+		return ErrAlreadyDrawn
+	}
+
 	var isOrg int
 	err = tx.QueryRow(`SELECT is_organizer FROM participants WHERE id = ? AND event_id = ?`, participantID, eventID).Scan(&isOrg)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -561,6 +579,17 @@ func (r *Repository) AddExclusion(eventID, giver, receiver string, reciprocal bo
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var status string
+	if err := tx.QueryRow(`SELECT status FROM events WHERE id = ?`, eventID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if status != "draft" {
+		return nil, ErrAlreadyDrawn
+	}
+
 	var created []Exclusion
 	for _, pr := range pairs {
 		ex := Exclusion{
@@ -623,6 +652,10 @@ func (r *Repository) SaveDraw(eventID string, assignments map[string]string) err
 	}
 	if n == 0 {
 		return ErrAlreadyDrawn
+	}
+
+	if err := verifyDrawStillValid(tx, eventID, assignments); err != nil {
+		return err
 	}
 
 	for giverID, receiverID := range assignments {
@@ -871,4 +904,56 @@ func isUniqueConstraintError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "unique constraint failed") || strings.Contains(msg, "constraint failed")
+}
+
+// verifyDrawStillValid checks, inside the saving transaction, that the draw
+// was computed from the event's current participants and exclusions: every
+// participant gives exactly once and receives exactly once, nobody draws
+// themselves, and no current exclusion is violated.
+func verifyDrawStillValid(tx *sql.Tx, eventID string, assignments map[string]string) error {
+	rows, err := tx.Query(`SELECT id FROM participants WHERE event_id = ?`, eventID)
+	if err != nil {
+		return err
+	}
+	ids := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	_ = rows.Close()
+
+	if len(ids) != len(assignments) {
+		return ErrDrawStale
+	}
+	received := make(map[string]bool, len(assignments))
+	for giver, receiver := range assignments {
+		if !ids[giver] || !ids[receiver] || giver == receiver || received[receiver] {
+			return ErrDrawStale
+		}
+		received[receiver] = true
+	}
+
+	exRows, err := tx.Query(`SELECT participant_a_id, participant_b_id FROM exclusions WHERE event_id = ?`, eventID)
+	if err != nil {
+		return err
+	}
+	defer exRows.Close()
+	for exRows.Next() {
+		var a, b string
+		if err := exRows.Scan(&a, &b); err != nil {
+			return err
+		}
+		if assignments[a] == b {
+			return ErrDrawStale
+		}
+	}
+	return exRows.Err()
 }

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { readJson } from './http'
 
 export const useAppConfigStore = defineStore('appConfig', () => {
   const allowPublicEventCreation = ref<boolean>(true)
@@ -10,7 +11,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     if (!res.ok) {
       throw new Error('Failed to load public config')
     }
-    const data = await res.json()
+    const data = await readJson(res)
     allowPublicEventCreation.value = Boolean(data.allow_public_event_creation)
     loaded.value = true
   }
@@ -27,7 +28,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to create event')
     }
@@ -40,7 +41,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, locale }),
     })
-    const data = await res.json()
+    const data = await readJson(res)
     if (!res.ok) {
       throw new Error(data.error || 'Failed to recover links')
     }

@@ -2,6 +2,8 @@ package mailer
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"mime"
 	"net"
@@ -21,7 +23,20 @@ type SMTPMailer struct {
 	pass    string
 	from    string
 	tlsMode string
+
+	// batchBudget caps the total time SendBatch may spend; messages not sent
+	// within it fail (and can be resent) so a slow server cannot stall a
+	// request for minutes. Zero means defaultBatchBudget.
+	batchBudget time.Duration
+	// rootCAs overrides the system roots when verifying the server (tests).
+	rootCAs *x509.CertPool
 }
+
+const defaultBatchBudget = 90 * time.Second
+
+// ErrBatchBudgetExceeded is returned for messages not attempted because the
+// batch time budget ran out.
+var ErrBatchBudgetExceeded = errors.New("smtp batch time budget exceeded, resend later")
 
 func NewSMTPMailer(cfg *config.Config) *SMTPMailer {
 	return &SMTPMailer{
@@ -65,7 +80,17 @@ func (s *SMTPMailer) SendBatch(msgs []Message) []error {
 		_ = conn.Close()
 	}()
 
+	budget := s.batchBudget
+	if budget <= 0 {
+		budget = defaultBatchBudget
+	}
+	budgetEnd := time.Now().Add(budget)
+
 	for i, msg := range msgs {
+		if time.Now().After(budgetEnd) {
+			errs[i] = ErrBatchBudgetExceeded
+			continue
+		}
 		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 		toAddr, parseErr := parseEnvelopeAddress(msg.To)
 		if parseErr != nil {
@@ -87,7 +112,7 @@ func (s *SMTPMailer) dialClient() (*smtp.Client, net.Conn, error) {
 
 	var conn net.Conn
 	var err error
-	tlsCfg := &tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12}
+	tlsCfg := &tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12, RootCAs: s.rootCAs}
 
 	if s.tlsMode == "tls" {
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsCfg)

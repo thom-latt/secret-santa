@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -28,17 +29,40 @@ type testEnv struct {
 	cleanup func()
 }
 
+var (
+	hashCacheMu sync.Mutex
+	hashCache   = map[string]string{}
+)
+
+// mustHashPassword memoises hashes: PBKDF2 at 210k iterations is slow under -race
+// and every test environment needs one.
 func mustHashPassword(t *testing.T, password string) string {
 	t.Helper()
+	hashCacheMu.Lock()
+	defer hashCacheMu.Unlock()
+	if h, ok := hashCache[password]; ok {
+		return h
+	}
 	h, err := config.HashPassword(password)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
+	hashCache[password] = h
 	return h
 }
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
+	return newTestEnvWith(t, nil)
+}
+
+// newTestEnvWith builds a test environment, letting the caller adjust the config.
+func newTestEnvWith(t *testing.T, mutate func(*config.Config)) *testEnv {
+	t.Helper()
+	// Run post-response emails synchronously so tests can assert on them.
+	origRun := runBackground
+	runBackground = func(f func()) { f() }
+	t.Cleanup(func() { runBackground = origRun })
 	sqlDB, err := db.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory sqlite: %v", err)
@@ -51,6 +75,9 @@ func newTestEnv(t *testing.T) *testEnv {
 		SuperAdminEmail:        "super@example.com",
 		SuperAdminPasswordHash: mustHashPassword(t, "secret-password-123"),
 		SessionSecret:          "0123456789abcdef0123456789abcdef",
+	}
+	if mutate != nil {
+		mutate(cfg)
 	}
 	repo := db.NewRepository(sqlDB)
 	mockMail := mailer.NewMockMailer()

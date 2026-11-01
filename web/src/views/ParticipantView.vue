@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useParticipantStore, type WishlistItem } from '../stores/participant'
 import ErrorView from './ErrorView.vue'
+import { safeHref } from '../utils/safeUrl'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -171,7 +172,7 @@ async function handleDeleteItem(itemId: string) {
                 <p v-if="item.note" class="text-slate-600 mt-1">{{ item.note }}</p>
                 <a
                   v-if="item.url"
-                  :href="item.url"
+                  :href="safeHref(item.url)"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="mt-1 inline-block text-red-600 hover:underline break-all"
@@ -305,7 +306,7 @@ async function handleDeleteItem(itemId: string) {
                 <p v-if="item.note" class="text-slate-600 mt-0.5">{{ item.note }}</p>
                 <a
                   v-if="item.url"
-                  :href="item.url"
+                  :href="safeHref(item.url)"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="text-red-600 hover:underline break-all"
