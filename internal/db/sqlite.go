@@ -118,6 +118,7 @@ func Open(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate sqlite schema: %w", err)
 	}
 
+	// nosemgrep: go.lang.security.audit.sqli.gosql-sqli.gosql-sqli -- PRAGMA cannot be parameterized; schemaVersion is a const int
 	if _, err := conn.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("set schema version: %w", err)
