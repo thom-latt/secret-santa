@@ -29,6 +29,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		if err := runBackup(os.Args[2:]); err != nil {
+			log.Fatalf("backup error: %v", err)
+		}
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("configuration error: %v", err)
@@ -125,5 +132,27 @@ func runSetPassword(args []string) error {
 		return fmt.Errorf("write %s: %w", *envFile, err)
 	}
 	fmt.Fprintf(os.Stderr, "Updated SUPER_ADMIN_PASSWORD_HASH in %s\n", *envFile)
+	return nil
+}
+
+// runBackup copies the database at DB_PATH to args[0]. It reads only DB_PATH
+// so it works from `docker compose exec` without a full production config.
+func runBackup(args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: secret-santa backup <destination-file>")
+	}
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./data/secret-santa.db"
+	}
+	conn, err := db.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := db.Backup(conn, args[0]); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Backup written to %s\n", args[0])
 	return nil
 }

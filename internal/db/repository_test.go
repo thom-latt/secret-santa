@@ -431,3 +431,41 @@ func TestPurgeExpiredEvents(t *testing.T) {
 		t.Fatalf("participants must cascade: %d, %v", orphans, err)
 	}
 }
+
+func TestBackupProducesOpenableCopyWithData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "live.db")
+	conn, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ev, _ := seedEvent(t, NewRepository(conn), 2)
+
+	dst := filepath.Join(t.TempDir(), "backup.db")
+	if err := Backup(conn, dst); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	copyDB, err := Open(dst)
+	if err != nil {
+		t.Fatalf("open backup: %v", err)
+	}
+	defer copyDB.Close()
+	got, err := NewRepository(copyDB).ListParticipants(ev.ID)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("backup content: %v %d", err, len(got))
+	}
+	if err := Backup(conn, dst); err == nil {
+		t.Fatal("backup must refuse to overwrite an existing file")
+	}
+}
+
+func TestPingFailsOnClosedDB(t *testing.T) {
+	repo, conn := newTestRepo(t)
+	if err := repo.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	if err := repo.Ping(); err == nil {
+		t.Fatal("expected error")
+	}
+}

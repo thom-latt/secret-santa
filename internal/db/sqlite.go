@@ -147,3 +147,15 @@ func checkLegacySchema(conn *sql.DB) error {
 	}
 	return nil
 }
+
+// Backup writes a consistent copy of the live database to dst (WAL-safe, no
+// sqlite3 binary needed). VACUUM INTO refuses to overwrite an existing file.
+func Backup(conn *sql.DB, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return fmt.Errorf("create backup directory: %w", err)
+	}
+	if _, err := conn.Exec("VACUUM INTO ?", dst); err != nil {
+		return fmt.Errorf("backup: %w", err)
+	}
+	return os.Chmod(dst, 0o600)
+}

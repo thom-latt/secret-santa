@@ -82,6 +82,10 @@ func newRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 
 	// Healthcheck
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.repo.Ping(); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 

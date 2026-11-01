@@ -1212,10 +1212,7 @@ func TestDatabaseFailureYieldsCleanJSONErrorsOnEveryRoute(t *testing.T) {
 			t.Fatalf("%s %s: internal error details leaked to the client: %s", rt.method, rt.path, rec.Body.String())
 		}
 	}
-	// the health endpoint stays up so orchestrators can see the process is alive
-	if rec := doRaw(env.handler, http.MethodGet, "/api/health", ``, nil, ""); rec.Code != http.StatusOK {
-		t.Fatalf("health: %d", rec.Code)
-	}
+	// health reports the broken database, see TestHealthReturns503WhenDBIsDown
 }
 
 // ---------------------------------------------------- slow SMTP vs server write timeout
@@ -1257,5 +1254,13 @@ func TestDrawResponseSurvivesSlowEmailBatchOnRealServer(t *testing.T) {
 		if p.EmailSentAt == nil {
 			t.Fatalf("emails were sent before answering, %s should be marked as sent", p.Email)
 		}
+	}
+}
+
+func TestHealthReturns503WhenDBIsDown(t *testing.T) {
+	env := newTestEnv(t)
+	_ = env.db.Close()
+	if rec := doRaw(env.handler, http.MethodGet, "/api/health", ``, nil, ""); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("health: %d", rec.Code)
 	}
 }

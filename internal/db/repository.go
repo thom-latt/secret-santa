@@ -87,6 +87,9 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// Ping checks that the database answers.
+func (r *Repository) Ping() error { return r.db.Ping() }
+
 func GenerateUUID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)

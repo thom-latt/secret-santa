@@ -70,3 +70,18 @@ func TestRunSetPasswordRejectsUnknownFlag(t *testing.T) {
 		t.Fatal("expected a flag parsing error")
 	}
 }
+
+func TestRunBackupWritesCopy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DB_PATH", filepath.Join(dir, "live.db"))
+	dst := filepath.Join(dir, "out", "b.db")
+	if err := runBackup([]string{dst}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := runBackup(nil); err == nil {
+		t.Fatal("missing destination must fail")
+	}
+}

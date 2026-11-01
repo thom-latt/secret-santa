@@ -36,10 +36,13 @@ flowchart LR
   - **Pure Go, CGO-free** SQLite driver (`modernc.org/sqlite`) enabling straightforward cross-compilation (`amd64` and `arm64` for all Synology, QNAP, TrueNAS, and Raspberry Pi NAS models) and a minimalist final container (`alpine` or `distroless`).
   - Compiled frontend build embedded directly into the Go binary via `embed.FS` (exposed by `web/embed.go`), with SPA fallback to `index.html` only for non-API routes (`!/api/*`) without a static asset file extension.
   - Application-level, in-memory rate limiting as a second line of defence behind the front-facing Nginx (which remains the primary one): Super Admin login (10 failed attempts per client per minute), public event creation (20 per client per hour), link recovery (10 requests per client per 10 minutes and 3 emails per address per hour; beyond the per-address limit the answer stays the same generic `200`, so the throttle is not observable). Clients are identified by the TCP peer address, or by the right-most `X-Forwarded-For` entry when `TRUST_PROXY=true` (to be enabled only behind a reverse proxy that sets that header).
+  - Resend limits: each participant can be sent their link at most 3 times per hour, and the "resend failed" action is limited to 5 calls per event per hour. Super Admin sessions are signed with a random per-process epoch, so a server restart invalidates every session (a logout also invalidates them).
   - Strict JSON decoding of every request body: unknown fields, trailing data and bodies over 64 KiB are rejected (`400`, or `413` for oversized bodies).
   - Emails triggered by public endpoints (event creation, link recovery) are sent after the HTTP response, so the response time never reveals whether an address is registered; pending sends are awaited on graceful shutdown. Draw and resend endpoints send their batch synchronously (bounded to a 90 s budget, unsent messages being reported as failed and resendable) and extend the response write deadline accordingly.
   - Global HTTP security headers: `Referrer-Policy: no-referrer` (prevents any leakage of URL tokens to external merchant websites linked in wishlists), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`.
 - **Database**: **SQLite**
+  - **Retention**: events are deleted automatically (cascading to participants, exclusions and wishlists) 30 days after `event_date`, or 12 months after creation when undated; the purge runs at startup and every 24 h.
+  - **Backups**: `secret-santa backup <dst>` writes a consistent copy via `VACUUM INTO`; `GET /api/health` pings the database and returns `503` on failure.
   - Stored in a single file mounted on a persistent Docker volume on the NAS local disk (`/data/secret-santa.db`) to survive container restarts and updates.
   - Typed SQL queries directly via standard `database/sql` (without an ORM or external migration library: idempotent `CREATE TABLE IF NOT EXISTS` schema executed on startup).
   - Strict configuration to avoid any `SQLITE_BUSY` errors: Go connection pool configured with `db.SetMaxOpenConns(1)` and pragmas passed in the DSN: `_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)`.
@@ -49,6 +52,7 @@ flowchart LR
   - Mandatory `APP_BASE_URL` variable (e.g., `https://santa.mydomain.com`) to generate reliable absolute magic links behind Nginx without relying on the HTTP `Host` header.
   - **In Production (`APP_ENV=production`)**: Sent via standard SMTP protocol supporting all 3 TLS modes (`SMTP_TLS_MODE=starttls|tls|none` for ports 587, 465, or 25).
   - **In Development (`APP_ENV=development`)**: **No email is ever sent over the network**. All emails are intercepted by a `MockMailer` that clearly prints them to the console (with clickable magic links) and keeps them in memory for tests.
+- **Privacy page**: `/privacy` states the data collected, the retention rule and the operator identity (`OPERATOR_NAME`, `OPERATOR_EMAIL`, both required in production); emails link to it.
 - **Authentication**:
   - **Zero password** for organizers and participants: authentication exclusively via secret magic links (`admin_token` and `participant_token`).
   - **Super Administrator only**: email/password authentication (`SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` defined in `.env`).
@@ -67,7 +71,7 @@ flowchart LR
 erDiagram
     APP_SETTINGS {
         int id PK
-        boolean allow_public_event_creation
+        boolean allow_public_event_creation "Default false: invite-only"
         datetime updated_at
     }
 
