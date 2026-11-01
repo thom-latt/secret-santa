@@ -23,6 +23,7 @@ const (
 	ModeImpossible  Mode = "impossible"
 )
 
+// ExclusionPair is directional: A must not give to B (B may still give to A).
 type ExclusionPair struct {
 	A string
 	B string
@@ -48,7 +49,7 @@ func Solve(participantIDs []string, exclusions []ExclusionPair) (*Result, error)
 		idxByID[id] = i
 	}
 
-	// Build adjacency matrix of allowed directed edges (symmetric since exclusions are mutual)
+	// Build adjacency matrix of allowed directed edges (giver -> receiver)
 	allowed := make([][]bool, n)
 	for i := range allowed {
 		allowed[i] = make([]bool, n)
@@ -63,22 +64,36 @@ func Solve(participantIDs []string, exclusions []ExclusionPair) (*Result, error)
 		j, okB := idxByID[ex.B]
 		if okA && okB {
 			allowed[i][j] = false
-			allowed[j][i] = false
 		}
 	}
 
-	// Quick degree check: in any valid draw (single cycle or >=3 sub-loops),
-	// every participant is in a cycle with two distinct neighbors (giver != receiver),
-	// so every participant needs at least 2 allowed partners in a mutual exclusion graph!
+	// Quick degree check: in any valid draw (single cycle or >=3 sub-loops) every
+	// participant gives to exactly one person and receives from exactly one person,
+	// so each needs at least one allowed receiver and one allowed giver.
 	for i := 0; i < n; i++ {
-		deg := 0
+		out, in := 0, 0
+		lastOut, lastIn := -1, -1
 		for j := 0; j < n; j++ {
 			if allowed[i][j] {
-				deg++
+				out++
+				lastOut = j
+			}
+			if allowed[j][i] {
+				in++
+				lastIn = j
 			}
 		}
-		if deg < 2 {
-			diag := fmt.Sprintf("Participant %s has fewer than 2 allowed partners", participantIDs[i])
+		if out < 1 {
+			diag := fmt.Sprintf("Participant %s cannot offer to anyone", participantIDs[i])
+			return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
+		}
+		if in < 1 {
+			diag := fmt.Sprintf("Nobody can offer to participant %s", participantIDs[i])
+			return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
+		}
+		// Sole possible receiver is also sole possible giver: would force a reciprocal pair.
+		if out == 1 && in == 1 && lastOut == lastIn {
+			diag := fmt.Sprintf("Participant %s has fewer than 2 distinct allowed partners", participantIDs[i])
 			return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
 		}
 	}
@@ -161,12 +176,14 @@ func solveHamiltonianMRV(n int, allowed [][]bool, timeout time.Duration, maxStep
 	visited[0] = true
 
 	// Precompute candidate lists
-	adj := make([][]int, n)
+	adj := make([][]int, n)  // successors: u -> v allowed
+	radj := make([][]int, n) // predecessors: v -> u allowed
 	remDeg := make([]int, n)
 	for u := 0; u < n; u++ {
 		for v := 0; v < n; v++ {
 			if allowed[u][v] {
 				adj[u] = append(adj[u], v)
+				radj[v] = append(radj[v], u)
 				remDeg[u]++
 			}
 		}
@@ -222,7 +239,7 @@ func solveHamiltonianMRV(n int, allowed [][]bool, timeout time.Duration, maxStep
 			visited[v] = true
 			nextVertex[curr] = v
 			possible := true
-			for _, w := range adj[v] {
+			for _, w := range radj[v] {
 				if !visited[w] {
 					remDeg[w]--
 					if remDeg[w] == 0 && depth+1 < n && !allowed[w][0] {
@@ -235,7 +252,7 @@ func solveHamiltonianMRV(n int, allowed [][]bool, timeout time.Duration, maxStep
 				return true
 			}
 
-			for _, w := range adj[v] {
+			for _, w := range radj[v] {
 				if !visited[w] {
 					remDeg[w]++
 				}
@@ -263,11 +280,13 @@ func solveSubLoopsMRV(n int, allowed [][]bool, timeout time.Duration, maxSteps i
 		assignedIn[i] = -1
 	}
 
-	adj := make([][]int, n)
+	adj := make([][]int, n)  // successors: u -> v allowed
+	radj := make([][]int, n) // predecessors: v -> u allowed
 	for u := 0; u < n; u++ {
 		for v := 0; v < n; v++ {
 			if allowed[u][v] {
 				adj[u] = append(adj[u], v)
+				radj[v] = append(radj[v], u)
 			}
 		}
 	}
@@ -338,7 +357,7 @@ func solveSubLoopsMRV(n int, allowed [][]bool, timeout time.Duration, maxSteps i
 				continue
 			}
 			hasGiver := false
-			for _, u := range adj[v] {
+			for _, u := range radj[v] {
 				if assignedOut[u] == -1 && assignedOut[v] != u {
 					hasGiver = true
 					break

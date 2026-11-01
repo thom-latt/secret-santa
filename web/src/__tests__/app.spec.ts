@@ -277,19 +277,35 @@ describe('Secret Santa Frontend', () => {
     })
     expect(document.activeElement).toBe(inputs[0].element)
 
-    // US-2.4: Exclusion selector prevents selecting same participant or already excluded pair (p1 <-> p2)
+    // US-2.4: Directional exclusions. Only the person chosen in the other select is disabled;
+    // an existing p1 -> p2 exclusion does not disable p2.
     const selectA = wrapper.get('[data-testid="exclusion-select-a"]')
     const selectB = wrapper.get('[data-testid="exclusion-select-b"]')
     await selectA.setValue('p1')
     const optionsB = selectB.findAll('option')
-    // option 0 is placeholder, option 1 is p1 (self), option 2 is p2 (already excluded with p1), option 3 is p3 (allowed)
+    // option 0 is placeholder, option 1 is p1 (self), option 2 is p2, option 3 is p3
     expect(optionsB[1].attributes('disabled')).toBeDefined()
-    expect(optionsB[2].attributes('disabled')).toBeDefined()
+    expect(optionsB[2].attributes('disabled')).toBeUndefined()
     expect(optionsB[3].attributes('disabled')).toBeUndefined()
 
-    await selectB.setValue('p3')
+    // p1 -> p2 already exists: submit disabled and hint shown
+    await selectB.setValue('p2')
+    expect(wrapper.get('[data-testid="add-exclusion-btn"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="exclusion-exists-msg"]').exists()).toBe(true)
+
+    // ticking "reciprocal" allows adding the missing p2 -> p1 direction
+    await wrapper.get('[data-testid="exclusion-reciprocal"]').setValue(true)
+    expect(wrapper.get('[data-testid="add-exclusion-btn"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="exclusion-exists-msg"]').exists()).toBe(false)
     await wrapper.get('[data-testid="add-exclusion-form"]').trigger('submit.prevent')
-    expect(adminStore.addExclusion).toHaveBeenCalledWith('adm_tok_123', 'p1', 'p3')
+    expect(adminStore.addExclusion).toHaveBeenCalledWith('adm_tok_123', 'p1', 'p2', true)
+
+    // Default (unchecked) adds a single direction
+    await selectA.setValue('p1')
+    await selectB.setValue('p3')
+    expect((wrapper.get('[data-testid="exclusion-reciprocal"]').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('[data-testid="add-exclusion-form"]').trigger('submit.prevent')
+    expect(adminStore.addExclusion).toHaveBeenCalledWith('adm_tok_123', 'p1', 'p3', false)
 
     // US-2.5: Verify sub_loops and impossible feasibility states
     adminStore.event.feasibility = { mode: 'sub_loops', diagnostic: '' }

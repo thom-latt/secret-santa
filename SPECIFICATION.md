@@ -120,14 +120,14 @@ erDiagram
     }
 
     EVENTS ||--o{ PARTICIPANTS : "contains"
-    EVENTS ||--o{ EXCLUSIONS : "defines (mutual A <-> B)"
+    EVENTS ||--o{ EXCLUSIONS : "defines (directional A -/-> B)"
     PARTICIPANTS ||--o{ WISHLIST_ITEMS : "wishes for"
     PARTICIPANTS ||--o| PARTICIPANTS : "gives to (assigned_to_id)"
 ```
 
 ### SQLite Integrity Constraints:
 - `PARTICIPANTS`: `UNIQUE(event_id, email COLLATE NOCASE)` and partial unique index `CREATE UNIQUE INDEX idx_event_organizer ON participants(event_id) WHERE is_organizer = 1`.
-- `EXCLUSIONS`: All exclusions are **mutual** ($A \nleftrightarrow B$). To prevent symmetric duplicates in the database, identifiers are ordered upon insertion (`participant_a_id < participant_b_id`) with `CHECK (participant_a_id < participant_b_id)` and `UNIQUE(event_id, participant_a_id, participant_b_id)`.
+- `EXCLUSIONS`: Exclusions are **directional** ($A \nrightarrow B$: "A does not offer to B", B may still offer to A). `participant_a_id` is the giver and `participant_b_id` the receiver A must not draw. `CHECK (participant_a_id <> participant_b_id)` and `UNIQUE(event_id, participant_a_id, participant_b_id)`. A mutual exclusion is simply two rows (A→B and B→A), created together via the optional `reciprocal` flag of the add endpoint.
 
 ---
 
@@ -135,7 +135,7 @@ erDiagram
 
 *(Note: There is no standard or maintained Go library for uniform sampling of constrained Hamiltonian cycles with $\ge 3$ sub-cycle fallback. The algorithm below combines perfectly uniform rejection sampling with a bounded backtracking solver in ~120 lines of standard Go).*
 
-The draw takes as input $N$ participants ($3 \le N \le 100$) and a set of mutual exclusions $E = \{ (A \nleftrightarrow B) \}$.
+The draw takes as input $N$ participants ($3 \le N \le 100$) and a set of directional exclusions $E = \{ (A \nrightarrow B) \}$.
 
 ```mermaid
 flowchart TD
@@ -221,11 +221,11 @@ flowchart TD
     - If the edited participant has `is_organizer = true`, their new details (`first_name`, `last_name`, `email`) also update `events.organizer_*`.
     - Cascading deletion of exclusions linked to the deleted participant; if the organizer deletes their own participant row, the "I am participating" checkbox is automatically unchecked.
 
-- **US-2.4 — Mutual Exclusions Management ($A \nleftrightarrow B$)**
+- **US-2.4 — Directional Exclusions Management ($A \nrightarrow B$)**
   - *As an* organizer of a draft event,
-  - *I want* to add or remove mutual exclusion rules ("A and B cannot draw each other"),
+  - *I want* to add or remove exclusion rules ("A does not offer to B"), with a quick option to also add the opposite direction,
   - *So that* partners or two people who exchanged gifts last year do not draw each other.
-  - **Acceptance Criteria**: "Participant A" $\nleftrightarrow$ "Participant B" selector; prevents selecting the same person twice ($A \nleftrightarrow A$) or an already excluded pair (regardless of $A\text{-}B$ or $B\text{-}A$ order); clear display of excluded pairs with one-click deletion.
+  - **Acceptance Criteria**: "Who gives" / "Must not give to" selectors; prevents selecting the same person twice; an unchecked-by-default "also apply the other way round" checkbox creates both directions (only the missing one if one already exists); an exact duplicate is rejected; each direction is listed as its own row with one-click deletion, rows forming a mutual pair being marked "Mutual".
 
 - **US-2.5 — Dry-Run Draw Feasibility Check**
   - *As an* organizer configuring exclusions,
@@ -377,7 +377,7 @@ secret-santa-agy/
 │   │   └── repository.go           # Typed SQL queries and short transactions
 │   ├── draw/
 │   │   ├── solver.go               # Uniform sampling (Pass 1A) + Bounded MRV Backtracking (Pass 1B & Pass 2)
-│   │   └── solver_test.go          # Intensive unit tests (cycles, mutual exclusions, equiprobability, timeouts)
+│   │   └── solver_test.go          # Intensive unit tests (cycles, directional exclusions, equiprobability, timeouts)
 │   ├── mailer/
 │   │   ├── mailer.go               # Mailer interface + FR/EN email templates
 │   │   ├── smtp.go                 # SMTP implementation (STARTTLS / Implicit TLS / None — prod only)
@@ -387,7 +387,7 @@ secret-santa-agy/
 │       ├── dto.go                  # Strict role-based DTO structs (zero leak guarantee for assigned_to_id)
 │       ├── router.go               # HTTP routes, security headers (Referrer-Policy: no-referrer) & SPA fallback
 │       ├── handlers_public.go      # Public status, event creation, unified link recovery
-│       ├── handlers_event_admin.go # Event management, participants, mutual exclusions, draw, post-draw editing
+│       ├── handlers_event_admin.go # Event management, participants, directional exclusions, draw, post-draw editing
 │       ├── handlers_participant.go # Participant space (read-only GET, POST /reveal), wishlist CRUD
 │       ├── handlers_superadmin.go  # Super Admin login, public creation toggle, SMTP test, list/invite/delete
 │       └── api_test.go             # End-to-end integration tests for all endpoints and User Stories
@@ -417,10 +417,10 @@ Every feature and User Story will be covered by automated tests:
 1. **Draw Algorithm Unit Tests (`internal/draw/solver_test.go`)**:
    - Verify that a draw without exclusions for $N \in \{3, 4, 5, 10, 50\}$ consistently produces a **single Hamiltonian cycle** ($1$ single loop of size $N$) and no reciprocal pairs ($A \leftrightarrow B$).
    - **Statistical equiprobability test**: on $N = 4$ (6 possible directed Hamiltonian cycles), verify over 6,000 draws that each cycle appears uniformly ($\sim 1000 \pm 15\%$).
-   - Verify strict compliance with mutual exclusions ($A \nleftrightarrow B$).
+   - Verify strict compliance with directional exclusions ($A \nrightarrow B$).
    - Verify **$\ge 3$ sub-loops fallback (Pass 2)**: create a 6-person graph split into two groups of 3 by inter-group mutual exclusions where a single 6-person Hamiltonian cycle is impossible, but two 3-person loops exist $\rightarrow$ the algorithm properly finds the two 3-person loops without any reciprocal pair ($A \leftrightarrow B$).
    - Verify mathematically impossible cases:
-     - 3 people with one mutual exclusion $\rightarrow$ `ErrNoValidDraw`.
+     - 3 people with one mutual exclusion (both directions) $\rightarrow$ `ErrNoValidDraw`.
      - 4 people where the only solution is two 2-cycles ($A \leftrightarrow B$ and $C \leftrightarrow D$) $\rightarrow$ rejected (`ErrNoValidDraw`).
      - 5 people where a 5-cycle is impossible (since $5$ cannot be partitioned into integers $\ge 3$) $\rightarrow$ rejected (`ErrNoValidDraw`).
    - **Anti-DoS performance test**: heavily constrained and unsatisfiable $N = 50$ graph $\rightarrow$ returns `ErrNoValidDraw` in under `600ms`.
@@ -434,7 +434,7 @@ Every feature and User Story will be covered by automated tests:
      - Public event creation with Title (enabled vs. disabled by Super Admin).
      - Unified link recovery (returns both organizer and participant links associated with an email).
      - Organizer invitation by the Super Admin when public creation is disabled, and Super Admin SMTP test.
-     - Event configuration, "I am participating" checkbox synchronization, adding/removing participants, mutual exclusions ($A \nleftrightarrow B$).
+     - Event configuration, "I am participating" checkbox synchronization, adding/removing participants, directional exclusions ($A \nrightarrow B$).
      - Draw execution, double-click protection (`409 Conflict`), partial SMTP failure tolerance (`email_sent_at` / `email_error`), and **strict verification that event admin and Super Admin JSON responses never contain the drawn target's ID or name**.
      - Verify that `GET /api/p/:token` **does not modify** `link_clicked_at` and **exposes neither the target's name nor wishlist** while `link_clicked_at IS NULL`, and that only `POST /api/p/:token/reveal` sets `link_clicked_at` and reveals the target and their wishlist.
      - Adding/editing/deleting wishlist items (automatic `https://` prefixing, rejection of `javascript:alert(1)` with `400 Bad Request`) $\rightarrow$ updates the "Filled wishlist" status on the admin side and is visible only to the Secret Santa who revealed their target.

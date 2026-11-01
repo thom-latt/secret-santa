@@ -87,9 +87,12 @@ type UpsertParticipantRequest struct {
 	Email     string `json:"email"`
 }
 
+// CreateExclusionRequest: participant A must not offer to participant B.
+// Reciprocal also forbids B offering to A.
 type CreateExclusionRequest struct {
 	ParticipantAID string `json:"participant_a_id"`
 	ParticipantBID string `json:"participant_b_id"`
+	Reciprocal     bool   `json:"reciprocal"`
 }
 
 type WishlistItemDTO struct {

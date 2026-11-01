@@ -38,6 +38,7 @@ const editPartEmail = ref('')
 // Exclusions form
 const exPartA = ref('')
 const exPartB = ref('')
+const exReciprocal = ref(false)
 
 // Modals
 const showDrawModal = ref(false)
@@ -83,14 +84,39 @@ function formatDate(iso: string): string {
   return iso.slice(0, 10)
 }
 
-function isPairExcluded(idA: string, idB: string): boolean {
-  if (!idA || !idB || !store.event) return false
+// Exclusions are directional: giver must not offer to receiver.
+function hasExclusion(giverId: string, receiverId: string): boolean {
+  if (!giverId || !receiverId || !store.event) return false
   return store.event.exclusions.some(
-    (ex) =>
-      (ex.participant_a_id === idA && ex.participant_b_id === idB) ||
-      (ex.participant_a_id === idB && ex.participant_b_id === idA),
+    (ex) => ex.participant_a_id === giverId && ex.participant_b_id === receiverId,
   )
 }
+
+const reverseExists = computed(() => hasExclusion(exPartB.value, exPartA.value))
+const nothingToAdd = computed(
+  () =>
+    !!exPartA.value &&
+    !!exPartB.value &&
+    hasExclusion(exPartA.value, exPartB.value) &&
+    (!exReciprocal.value || reverseExists.value),
+)
+
+const sortedExclusions = computed(() => {
+  if (!store.event) return []
+  const pairKey = (a: string, b: string) =>
+    [participantName(a), participantName(b)].sort((x, y) => x.localeCompare(y)).join('|')
+  return [...store.event.exclusions]
+    .map((ex) => ({
+      ex,
+      key: pairKey(ex.participant_a_id, ex.participant_b_id),
+      mutual: hasExclusion(ex.participant_b_id, ex.participant_a_id),
+    }))
+    .sort(
+      (x, y) =>
+        x.key.localeCompare(y.key) ||
+        participantName(x.ex.participant_a_id).localeCompare(participantName(y.ex.participant_a_id)),
+    )
+})
 
 async function copyAdminLink() {
   try {
@@ -179,9 +205,10 @@ async function handleAddExclusion() {
   actionError.value = null
   if (!exPartA.value || !exPartB.value || exPartA.value === exPartB.value) return
   try {
-    await store.addExclusion(adminToken.value, exPartA.value, exPartB.value)
+    await store.addExclusion(adminToken.value, exPartA.value, exPartB.value, exReciprocal.value)
     exPartA.value = ''
     exPartB.value = ''
+    exReciprocal.value = false
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : String(e)
   }
@@ -559,6 +586,7 @@ async function confirmAndDeleteEvent() {
         <!-- Dry-Run Feasibility Indicator (US-2.5) -->
         <div
           data-testid="feasibility-badge"
+          aria-live="polite"
           class="rounded-xl p-3 text-sm font-medium border"
           :class="{
             'bg-emerald-50 border-emerald-200 text-emerald-800': store.event.feasibility.mode === 'single_cycle',
@@ -576,64 +604,119 @@ async function confirmAndDeleteEvent() {
         </div>
 
         <form data-testid="add-exclusion-form" class="grid grid-cols-1 sm:grid-cols-3 gap-3" @submit.prevent="handleAddExclusion">
-          <select
-            v-model="exPartA"
-            data-testid="exclusion-select-a"
-            class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-          >
-            <option value="">{{ t('admin.select_participant_a') }}</option>
-            <option
-              v-for="p in store.event.participants"
-              :key="p.id"
-              :value="p.id"
-              :disabled="p.id === exPartB || isPairExcluded(p.id, exPartB)"
+          <div class="flex flex-col gap-1">
+            <label for="exclusion-select-a" class="text-xs font-medium text-slate-600">{{ t('admin.select_participant_a') }}</label>
+            <select
+              id="exclusion-select-a"
+              v-model="exPartA"
+              data-testid="exclusion-select-a"
+              class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
             >
-              {{ p.first_name }} {{ p.last_name }}
-            </option>
-          </select>
+              <option value="">{{ t('admin.select_placeholder') }}</option>
+              <option
+                v-for="p in store.event.participants"
+                :key="p.id"
+                :value="p.id"
+                :disabled="p.id === exPartB"
+              >
+                {{ p.first_name }} {{ p.last_name }}
+              </option>
+            </select>
+          </div>
 
-          <select
-            v-model="exPartB"
-            data-testid="exclusion-select-b"
-            class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-          >
-            <option value="">{{ t('admin.select_participant_b') }}</option>
-            <option
-              v-for="p in store.event.participants"
-              :key="p.id"
-              :value="p.id"
-              :disabled="p.id === exPartA || isPairExcluded(exPartA, p.id)"
+          <div class="flex flex-col gap-1">
+            <label for="exclusion-select-b" class="text-xs font-medium text-slate-600">{{ t('admin.select_participant_b') }}</label>
+            <select
+              id="exclusion-select-b"
+              v-model="exPartB"
+              data-testid="exclusion-select-b"
+              class="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
             >
-              {{ p.first_name }} {{ p.last_name }}
-            </option>
-          </select>
+              <option value="">{{ t('admin.select_placeholder') }}</option>
+              <option
+                v-for="p in store.event.participants"
+                :key="p.id"
+                :value="p.id"
+                :disabled="p.id === exPartA"
+              >
+                {{ p.first_name }} {{ p.last_name }}
+              </option>
+            </select>
+          </div>
 
           <button
             type="submit"
             data-testid="add-exclusion-btn"
-            :disabled="!exPartA || !exPartB || exPartA === exPartB || isPairExcluded(exPartA, exPartB)"
-            class="min-h-[44px] rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+            :disabled="!exPartA || !exPartB || exPartA === exPartB || nothingToAdd"
+            class="min-h-[44px] self-end rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
           >
             {{ t('admin.add_exclusion_btn') }}
           </button>
+
+          <label class="sm:col-span-3 flex min-h-[44px] items-center gap-3 text-sm text-slate-700 cursor-pointer">
+            <input
+              v-model="exReciprocal"
+              type="checkbox"
+              data-testid="exclusion-reciprocal"
+              class="h-5 w-5 rounded border-slate-300"
+              :disabled="reverseExists"
+            />
+            <span>
+              {{
+                exPartA && exPartB
+                  ? t('admin.exclusion_reverse_named', {
+                      a: participantName(exPartA),
+                      b: participantName(exPartB),
+                    })
+                  : t('admin.exclusion_reverse_generic')
+              }}
+              <template v-if="reverseExists">{{ t('admin.exclusion_reverse_already') }}</template>
+            </span>
+          </label>
         </form>
 
-        <div v-if="store.event.exclusions.length > 0" class="space-y-2">
-          <div
-            v-for="ex in store.event.exclusions"
-            :key="ex.id"
-            class="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        <p v-if="nothingToAdd" data-testid="exclusion-exists-msg" aria-live="polite" class="text-sm text-slate-600">
+          {{ t('admin.exclusion_exists') }}
+        </p>
+
+        <ul v-if="sortedExclusions.length > 0" role="list" class="space-y-2">
+          <li
+            v-for="row in sortedExclusions"
+            :key="row.ex.id"
+            data-testid="exclusion-row"
+            class="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
           >
-            <span>{{ participantName(ex.participant_a_id) }} ↔ {{ participantName(ex.participant_b_id) }}</span>
+            <span class="flex flex-wrap items-center gap-2">
+              <span>{{
+                t('admin.exclusion_row', {
+                  a: participantName(row.ex.participant_a_id),
+                  b: participantName(row.ex.participant_b_id),
+                })
+              }}</span>
+              <span
+                v-if="row.mutual"
+                class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600"
+              >
+                <span aria-hidden="true">↔</span> {{ t('admin.exclusion_mutual_badge') }}
+              </span>
+            </span>
             <button
               type="button"
               class="min-h-[44px] px-3 text-xs font-medium text-red-700 hover:underline cursor-pointer"
-              @click="handleDeleteExclusion(ex.id)"
+              :aria-label="
+                t('admin.delete_btn') +
+                ' : ' +
+                t('admin.exclusion_row', {
+                  a: participantName(row.ex.participant_a_id),
+                  b: participantName(row.ex.participant_b_id),
+                })
+              "
+              @click="handleDeleteExclusion(row.ex.id)"
             >
               {{ t('admin.delete_btn') }}
             </button>
-          </div>
-        </div>
+          </li>
+        </ul>
       </section>
 
       <!-- Launch Draw Action (Draft Mode) -->

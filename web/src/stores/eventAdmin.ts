@@ -13,6 +13,7 @@ export interface AdminParticipant {
   wishlist_count: number
 }
 
+/** Directional: participant A must not offer to participant B. */
 export interface Exclusion {
   id: string
   participant_a_id: string
@@ -141,11 +142,20 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     event.value = data
   }
 
-  async function addExclusion(adminToken: string, participantAId: string, participantBId: string) {
+  async function addExclusion(
+    adminToken: string,
+    participantAId: string,
+    participantBId: string,
+    reciprocal = false,
+  ) {
     const res = await fetch(`/api/admin/events/${encodeURIComponent(adminToken)}/exclusions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ participant_a_id: participantAId, participant_b_id: participantBId }),
+      body: JSON.stringify({
+        participant_a_id: participantAId,
+        participant_b_id: participantBId,
+        reciprocal,
+      }),
     })
     const data = await res.json()
     if (!res.ok) {

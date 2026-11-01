@@ -532,17 +532,17 @@ func (r *Repository) ListExclusions(eventID string) ([]Exclusion, error) {
 	return list, rows.Err()
 }
 
-func (r *Repository) AddExclusion(eventID, partA, partB string) (*Exclusion, error) {
-	if partA == partB || partA == "" || partB == "" {
+// AddExclusion records that giver must not offer to receiver. If reciprocal is
+// true, receiver -> giver is recorded too. Directions that already exist are
+// skipped; ErrConflict is returned only when nothing new was inserted.
+func (r *Repository) AddExclusion(eventID, giver, receiver string, reciprocal bool) ([]Exclusion, error) {
+	if giver == receiver || giver == "" || receiver == "" {
 		return nil, ErrInvalidInput
-	}
-	if partA > partB {
-		partA, partB = partB, partA
 	}
 
 	// Verify both participants belong to eventID
 	var count int
-	err := r.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE event_id = ? AND id IN (?, ?)`, eventID, partA, partB).Scan(&count)
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE event_id = ? AND id IN (?, ?)`, eventID, giver, receiver).Scan(&count)
 	if err != nil {
 		return nil, err
 	}
@@ -550,23 +550,44 @@ func (r *Repository) AddExclusion(eventID, partA, partB string) (*Exclusion, err
 		return nil, ErrNotFound
 	}
 
-	ex := &Exclusion{
-		ID:             GenerateUUID(),
-		EventID:        eventID,
-		ParticipantAID: partA,
-		ParticipantBID: partB,
+	pairs := [][2]string{{giver, receiver}}
+	if reciprocal {
+		pairs = append(pairs, [2]string{receiver, giver})
 	}
-	_, err = r.db.Exec(`
-		INSERT INTO exclusions (id, event_id, participant_a_id, participant_b_id)
-		VALUES (?, ?, ?, ?)
-	`, ex.ID, ex.EventID, ex.ParticipantAID, ex.ParticipantBID)
+
+	tx, err := r.db.Begin()
 	if err != nil {
-		if isUniqueConstraintError(err) {
-			return nil, ErrConflict
-		}
 		return nil, err
 	}
-	return ex, nil
+	defer func() { _ = tx.Rollback() }()
+
+	var created []Exclusion
+	for _, pr := range pairs {
+		ex := Exclusion{
+			ID:             GenerateUUID(),
+			EventID:        eventID,
+			ParticipantAID: pr[0],
+			ParticipantBID: pr[1],
+		}
+		res, err := tx.Exec(`
+			INSERT INTO exclusions (id, event_id, participant_a_id, participant_b_id)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(event_id, participant_a_id, participant_b_id) DO NOTHING
+		`, ex.ID, ex.EventID, ex.ParticipantAID, ex.ParticipantBID)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			created = append(created, ex)
+		}
+	}
+	if len(created) == 0 {
+		return nil, ErrConflict
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 func (r *Repository) DeleteExclusion(eventID, exclusionID string) error {

@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS exclusions (
 	event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
 	participant_a_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
 	participant_b_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-	CHECK (participant_a_id < participant_b_id),
+	CHECK (participant_a_id <> participant_b_id),
 	UNIQUE(event_id, participant_a_id, participant_b_id)
 );
 

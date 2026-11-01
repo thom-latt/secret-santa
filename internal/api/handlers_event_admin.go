@@ -358,7 +358,7 @@ func (s *Server) handleAddExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = s.repo.AddExclusion(ev.ID, req.ParticipantAID, req.ParticipantBID)
+	_, err = s.repo.AddExclusion(ev.ID, req.ParticipantAID, req.ParticipantBID, req.Reciprocal)
 	if errors.Is(err, db.ErrInvalidInput) {
 		writeError(w, http.StatusBadRequest, "two distinct participants must be selected")
 		return
@@ -368,7 +368,7 @@ func (s *Server) handleAddExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, db.ErrConflict) {
-		writeError(w, http.StatusConflict, "this exclusion pair already exists")
+		writeError(w, http.StatusConflict, "this exclusion already exists")
 		return
 	}
 	if err != nil {

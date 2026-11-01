@@ -180,7 +180,7 @@ func TestEndToEndAllUserStories(t *testing.T) {
 		t.Fatalf("expected 4 participants, got %d", len(adminEv.Participants))
 	}
 
-	// 5. Mutual Exclusions & Feasibility (US-2.4, US-2.5)
+	// 5. Directional Exclusions & Feasibility (US-2.4, US-2.5)
 	pAlice := adminEv.Participants[0].ID
 	pBob := adminEv.Participants[1].ID
 	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+created.AdminToken+"/exclusions", CreateExclusionRequest{
@@ -190,13 +190,30 @@ func TestEndToEndAllUserStories(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 on add exclusion, got %d: %s", rec.Code, rec.Body.String())
 	}
-	// Duplicate exclusion in reverse order -> 409 Conflict
+	// Exact duplicate -> 409 Conflict
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+created.AdminToken+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: pBob,
+		ParticipantBID: pAlice,
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 on duplicate exclusion, got %d", rec.Code)
+	}
+	// Opposite direction is a distinct exclusion -> 201
 	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+created.AdminToken+"/exclusions", CreateExclusionRequest{
 		ParticipantAID: pAlice,
 		ParticipantBID: pBob,
 	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on opposite-direction exclusion, got %d: %s", rec.Code, rec.Body.String())
+	}
+	// Reciprocal when both directions already exist -> 409
+	rec = doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+created.AdminToken+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: pAlice,
+		ParticipantBID: pBob,
+		Reciprocal:     true,
+	})
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409 on symmetric duplicate exclusion, got %d", rec.Code)
+		t.Fatalf("expected 409 when reciprocal adds nothing, got %d", rec.Code)
 	}
 	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodGet, "/api/admin/events/"+created.AdminToken, nil).Body.Bytes(), &adminEv)
 	if adminEv.Feasibility.Mode != "single_cycle" {
@@ -524,18 +541,29 @@ func TestEpic2DraftEventAdministration(t *testing.T) {
 		t.Fatalf("expected single_cycle with 3 participants and 0 exclusions, got %+v", ev.Feasibility)
 	}
 
-	// Exclude Bob <-> Charlie: with N=3, any mutual exclusion leaves Bob and Charlie with only 1 allowed partner (<2)
+	// Exclude Bob <-> Charlie (reciprocal): with N=3, Bob and Charlie are left with only Alice as partner
 	charlieID := ev.Participants[2].ID
+	// One direction first, then reciprocal: only the missing opposite row must be added.
 	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
-		ParticipantAID: bobID, ParticipantBID: charlieID,
+		ParticipantAID: charlieID, ParticipantBID: bobID,
 	}).Body.Bytes(), &ev)
+	if len(ev.Exclusions) != 1 {
+		t.Fatalf("expected 1 exclusion row, got %d", len(ev.Exclusions))
+	}
+	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodPost, "/api/admin/events/"+tok+"/exclusions", CreateExclusionRequest{
+		ParticipantAID: bobID, ParticipantBID: charlieID, Reciprocal: true,
+	}).Body.Bytes(), &ev)
+	if len(ev.Exclusions) != 2 {
+		t.Fatalf("expected 2 exclusion rows with reciprocal=true, got %d", len(ev.Exclusions))
+	}
 	if ev.Feasibility.Mode != "impossible" || !strings.Contains(ev.Feasibility.Diagnostic, "Bob Dupont") {
 		t.Fatalf("expected impossible feasibility mentioning Bob Dupont, got %+v", ev.Feasibility)
 	}
 
-	// Delete the exclusion -> back to single_cycle
-	exID := ev.Exclusions[0].ID
-	_ = json.Unmarshal(doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/exclusions/"+exID, nil).Body.Bytes(), &ev)
+	// Delete both exclusion rows -> back to single_cycle
+	for _, ex := range append([]ExclusionDTO(nil), ev.Exclusions...) {
+		_ = json.Unmarshal(doJSON(t, env.handler, http.MethodDelete, "/api/admin/events/"+tok+"/exclusions/"+ex.ID, nil).Body.Bytes(), &ev)
+	}
 	if len(ev.Exclusions) != 0 || ev.Feasibility.Mode != "single_cycle" {
 		t.Fatalf("expected 0 exclusions and single_cycle after deleting exclusion, got %+v", ev)
 	}
