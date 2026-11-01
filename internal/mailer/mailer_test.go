@@ -263,3 +263,31 @@ func TestSMTPMailerPooledBatchAndPartialFailure(t *testing.T) {
 		t.Fatalf("expected 2 delivered messages, got %d", deliveredCount.Load())
 	}
 }
+
+func TestBuildFeedbackEmail(t *testing.T) {
+	msg := BuildFeedbackEmail("op@example.com", FeedbackData{
+		Kind:        "bug",
+		Message:     strings.Repeat("x", 100),
+		Role:        "participant",
+		EventID:     "ev-1",
+		EventTitle:  "Noel",
+		EventStatus: "drawn",
+		SenderName:  "Ann Lee",
+		SenderEmail: "ann@example.com",
+		UserAgent:   "TestAgent/1",
+	})
+	if msg.To != "op@example.com" || msg.ReplyTo != "ann@example.com" {
+		t.Fatalf("bad addressing: %+v", msg)
+	}
+	if want := "[Secret Santa] Bug: " + strings.Repeat("x", 60); msg.Subject != want {
+		t.Fatalf("subject = %q, want %q", msg.Subject, want)
+	}
+	for _, want := range []string{strings.Repeat("x", 100), "participant", "ev-1", "Noel", "drawn", "Ann Lee", "ann@example.com", "TestAgent/1"} {
+		if !strings.Contains(msg.Body, want) {
+			t.Errorf("body missing %q:\n%s", want, msg.Body)
+		}
+	}
+	if m := BuildFeedbackEmail("o@e.com", FeedbackData{Kind: "idea", Message: "a\nb"}); m.Subject != "[Secret Santa] Idea: a b" {
+		t.Fatalf("subject = %q", m.Subject)
+	}
+}

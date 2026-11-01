@@ -168,3 +168,8 @@ type SuperAdminOverviewDTO struct {
 	SuperAdminEmail          string               `json:"super_admin_email"`
 	Events                   []SuperAdminEventDTO `json:"events"`
 }
+
+type FeedbackRequest struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+}

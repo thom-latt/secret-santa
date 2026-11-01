@@ -157,3 +157,37 @@ func BuildRecoveryEmail(baseURL, locale, to string, orgLinks, partLinks []Recove
 		Body:    sb.String(),
 	}
 }
+
+// FeedbackData is a user report for the operator. Never put tokens in it.
+type FeedbackData struct {
+	Kind        string // bug, feedback or idea
+	Message     string
+	Role        string // organizer or participant
+	EventID     string
+	EventTitle  string
+	EventStatus string
+	SenderName  string
+	SenderEmail string
+	UserAgent   string
+}
+
+// BuildFeedbackEmail builds the operator-facing report (English only).
+// Reply-To is the sender's address on record.
+func BuildFeedbackEmail(to string, d FeedbackData) Message {
+	label := d.Kind
+	if label != "" {
+		label = strings.ToUpper(label[:1]) + label[1:]
+	}
+	preview := []rune(strings.Join(strings.Fields(d.Message), " "))
+	if len(preview) > 60 {
+		preview = preview[:60]
+	}
+	body := fmt.Sprintf("%s\n\n--\nRole: %s\nSender: %s <%s>\nEvent: %s (%s, status: %s)\nUser-Agent: %s\n",
+		d.Message, d.Role, d.SenderName, d.SenderEmail, d.EventTitle, d.EventID, d.EventStatus, d.UserAgent)
+	return Message{
+		To:      to,
+		Subject: fmt.Sprintf("[Secret Santa] %s: %s", label, string(preview)),
+		Body:    body,
+		ReplyTo: d.SenderEmail,
+	}
+}

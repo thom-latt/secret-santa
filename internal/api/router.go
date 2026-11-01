@@ -38,6 +38,9 @@ const (
 
 	resendParticipantLimit = 3 // resends per participant per hour
 	resendFailedLimit      = 5 // "resend failed" calls per event per hour
+
+	feedbackIPLimit    = 10 // feedback reports per IP per hour
+	feedbackEventLimit = 20 // feedback reports per event per hour
 )
 
 var backgroundTasks sync.WaitGroup
@@ -106,10 +109,12 @@ func newRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 	mux.HandleFunc("POST /api/admin/events/{adminToken}/draw", s.handleDrawEvent)
 	mux.HandleFunc("POST /api/admin/events/{adminToken}/participants/{participantID}/resend", s.handleResendParticipantEmail)
 	mux.HandleFunc("POST /api/admin/events/{adminToken}/resend-failed", s.handleResendFailedEmails)
+	mux.HandleFunc("POST /api/admin/events/{adminToken}/feedback", s.handleAdminFeedback)
 
 	// Participant space endpoints (Epic 5)
 	mux.HandleFunc("GET /api/p/{participantToken}", s.handleGetParticipantSpace)
 	mux.HandleFunc("POST /api/p/{participantToken}/reveal", s.handleRevealTarget)
+	mux.HandleFunc("POST /api/p/{participantToken}/feedback", s.handleParticipantFeedback)
 	mux.HandleFunc("POST /api/p/{participantToken}/wishlist", s.handleAddWishlistItem)
 	mux.HandleFunc("PUT /api/p/{participantToken}/wishlist/{itemID}", s.handleUpdateWishlistItem)
 	mux.HandleFunc("DELETE /api/p/{participantToken}/wishlist/{itemID}", s.handleDeleteWishlistItem)
