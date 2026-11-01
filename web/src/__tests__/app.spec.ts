@@ -245,6 +245,8 @@ describe('Secret Santa Frontend', () => {
       feasibility: {
         mode: 'single_cycle',
         diagnostic: '',
+        reason: '',
+        participant_name: '',
       },
     }
 
@@ -309,7 +311,7 @@ describe('Secret Santa Frontend', () => {
     expect(adminStore.addExclusion).toHaveBeenCalledWith('adm_tok_123', 'p1', 'p3', false)
 
     // US-2.5: Verify sub_loops and impossible feasibility states
-    adminStore.event.feasibility = { mode: 'sub_loops', diagnostic: '' }
+    adminStore.event.feasibility = { mode: 'sub_loops', diagnostic: '', reason: '', participant_name: '' }
     await wrapper.vm.$nextTick()
     expect(wrapper.get('[data-testid="feasibility-badge"]').text()).toContain(
       'Tirage valide (Sous-boucles de 3+ personnes)',
@@ -318,6 +320,8 @@ describe('Secret Santa Frontend', () => {
     adminStore.event.feasibility = {
       mode: 'impossible',
       diagnostic: 'Participant Alice Martin has fewer than 2 allowed partners',
+      reason: 'too_few_partners',
+      participant_name: 'Alice Martin',
     }
     await wrapper.vm.$nextTick()
     expect(wrapper.get('[data-testid="feasibility-badge"]').text()).toContain('Tirage impossible')
@@ -378,6 +382,8 @@ describe('Secret Santa Frontend', () => {
       feasibility: {
         mode: 'too_few',
         diagnostic: 'Need 1 more participant(s) (minimum 3)',
+        reason: '',
+        participant_name: '',
       },
     }
 
@@ -401,7 +407,7 @@ describe('Secret Santa Frontend', () => {
       email_error: null,
       wishlist_count: 0,
     })
-    adminStore.event.feasibility = { mode: 'single_cycle', diagnostic: '' }
+    adminStore.event.feasibility = { mode: 'single_cycle', diagnostic: '', reason: '', participant_name: '' }
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-testid="draw-need-more-msg"]').exists()).toBe(false)
@@ -484,6 +490,8 @@ describe('Secret Santa Frontend', () => {
       feasibility: {
         mode: 'single_cycle',
         diagnostic: '',
+        reason: '',
+        participant_name: '',
       },
     }
 

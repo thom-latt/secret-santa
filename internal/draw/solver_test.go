@@ -242,3 +242,33 @@ func TestSolveDirectionalDegreeDiagnostics(t *testing.T) {
 		t.Fatalf("expected in-degree diagnostic, got %v / %q", err, res.Diagnostic)
 	}
 }
+
+func TestSolveReportsReasonAndParticipant(t *testing.T) {
+	ids := makeParticipants(4)
+	var give, receive []ExclusionPair
+	for _, o := range []string{"P2", "P3", "P4"} {
+		give = append(give, ExclusionPair{A: "P1", B: o})
+		receive = append(receive, ExclusionPair{A: o, B: "P1"})
+	}
+	res, _ := Solve(ids, give)
+	if res.Reason != ReasonCannotGive || res.ParticipantID != "P1" {
+		t.Fatalf("got %q/%q", res.Reason, res.ParticipantID)
+	}
+	res, _ = Solve(ids, receive)
+	if res.Reason != ReasonCannotReceive || res.ParticipantID != "P1" {
+		t.Fatalf("got %q/%q", res.Reason, res.ParticipantID)
+	}
+	// P1 can only give to P2 and only receive from P2.
+	var recip []ExclusionPair
+	for _, o := range []string{"P3", "P4"} {
+		recip = append(recip, ExclusionPair{A: "P1", B: o}, ExclusionPair{A: o, B: "P1"})
+	}
+	res, _ = Solve(ids, recip)
+	if res.Reason != ReasonTooFewPartners || res.ParticipantID != "P1" {
+		t.Fatalf("got %q/%q", res.Reason, res.ParticipantID)
+	}
+	res, _ = Solve(makeParticipants(2), nil)
+	if res.Reason != ReasonTooFewParticipants {
+		t.Fatalf("got %q", res.Reason)
+	}
+}

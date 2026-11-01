@@ -65,6 +65,7 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 		feas = FeasibilityDTO{
 			Mode:       "too_few",
 			Diagnostic: fmt.Sprintf("Need %d more participant(s) (minimum 3)", 3-len(partIDs)),
+			Reason:     string(draw.ReasonTooFewParticipants),
 		}
 	} else {
 		// nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
@@ -75,8 +76,10 @@ func (s *Server) buildAdminEventResponse(ev *db.Event) (*AdminEventResponseDTO, 
 		}
 		if solveErr != nil {
 			feas = FeasibilityDTO{
-				Mode:       string(draw.ModeImpossible),
-				Diagnostic: diag,
+				Mode:            string(draw.ModeImpossible),
+				Diagnostic:      diag,
+				Reason:          string(res.Reason),
+				ParticipantName: nameByID[res.ParticipantID],
 			}
 		} else {
 			feas = FeasibilityDTO{

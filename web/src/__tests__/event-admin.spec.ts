@@ -70,7 +70,7 @@ function eventPayload() {
     drawn_at: null,
     participants,
     exclusions,
-    feasibility: { mode: 'single_cycle', diagnostic: '' },
+    feasibility: { mode: 'single_cycle', diagnostic: '', reason: '', participant_name: '' },
   }
 }
 
@@ -277,7 +277,7 @@ describe('EventAdminView - directional exclusions', () => {
     const w = await mountAdmin()
     await choose(w, 'p1', 'p2')
     await submit(w)
-    expect(w.text()).toContain('cannot add exclusions after the draw')
+    expect(w.text()).toContain('Exclusions cannot be added after the draw.')
     expect((w.get('[data-testid="exclusion-select-a"]').element as HTMLSelectElement).value).toBe('p1')
     expect(rowTexts(w)).toEqual([])
   })
@@ -323,14 +323,14 @@ describe('EventAdminView - launching the draw', () => {
   })
 
   it.each([
-    [422, 'Alice Martin cannot offer to anyone'],
-    [409, 'participants or exclusions kept changing during the draw, please retry'],
-    [409, 'the draw has already been executed'],
-  ])('shows the reason when the draw is refused (%i: %s) and stays in draft', async (code, message) => {
+    [422, 'Alice Martin cannot offer to anyone', 'Something went wrong, please try again.'],
+    [409, 'participants or exclusions kept changing during the draw, please retry', 'Participants or exclusions changed during the draw, please try again.'],
+    [409, 'the draw has already been executed', 'The draw has already been done.'],
+  ])('shows a translated reason when the draw is refused (%i: %s) and stays in draft', async (code, message, shown) => {
     overrides.set('POST /api/admin/events/tok/draw', () => json({ error: message }, code))
     const w = await mountAdmin()
     await launch(w)
-    expect(w.text()).toContain(message)
+    expect(w.text()).toContain(shown)
     expect(w.find('[data-testid="add-exclusion-form"]').exists()).toBe(true)
     expect(w.find('[data-testid="launch-draw-btn"]').exists()).toBe(true)
   })
@@ -339,7 +339,7 @@ describe('EventAdminView - launching the draw', () => {
     overrides.set('POST /api/admin/events/tok/draw', () => new Response('<html>504 Gateway Time-out</html>', { status: 504 }))
     const w = await mountAdmin()
     await launch(w)
-    expect(w.text()).toContain('Failed to execute draw')
+    expect(w.text()).toContain('Server error, please try again in a moment.')
     expect(w.text()).not.toContain('Unexpected token')
   })
 

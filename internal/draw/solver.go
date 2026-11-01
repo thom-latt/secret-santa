@@ -29,16 +29,29 @@ type ExclusionPair struct {
 	B string
 }
 
+// Reason is a machine-readable cause of an impossible draw, translated by the UI.
+type Reason string
+
+const (
+	ReasonCannotGive         Reason = "cannot_give"
+	ReasonCannotReceive      Reason = "cannot_receive"
+	ReasonTooFewPartners     Reason = "too_few_partners"
+	ReasonReciprocalOnly     Reason = "reciprocal_only"
+	ReasonTooFewParticipants Reason = "too_few"
+)
+
 type Result struct {
-	Assignments map[string]string
-	Mode        Mode
-	Diagnostic  string
+	Assignments   map[string]string
+	Mode          Mode
+	Diagnostic    string
+	Reason        Reason
+	ParticipantID string // set for the per-participant reasons
 }
 
 func Solve(participantIDs []string, exclusions []ExclusionPair) (*Result, error) {
 	n := len(participantIDs)
 	if n < 3 {
-		return &Result{Mode: ModeImpossible, Diagnostic: "At least 3 participants are required"}, ErrTooFewParticipants
+		return &Result{Mode: ModeImpossible, Diagnostic: "At least 3 participants are required", Reason: ReasonTooFewParticipants}, ErrTooFewParticipants
 	}
 	if n > 100 {
 		return &Result{Mode: ModeImpossible, Diagnostic: "Maximum 100 participants"}, ErrTooManyParticipants
@@ -85,16 +98,16 @@ func Solve(participantIDs []string, exclusions []ExclusionPair) (*Result, error)
 		}
 		if out < 1 {
 			diag := fmt.Sprintf("Participant %s cannot offer to anyone", participantIDs[i])
-			return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
+			return &Result{Mode: ModeImpossible, Diagnostic: diag, Reason: ReasonCannotGive, ParticipantID: participantIDs[i]}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
 		}
 		if in < 1 {
 			diag := fmt.Sprintf("Nobody can offer to participant %s", participantIDs[i])
-			return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
+			return &Result{Mode: ModeImpossible, Diagnostic: diag, Reason: ReasonCannotReceive, ParticipantID: participantIDs[i]}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
 		}
 		// Sole possible receiver is also sole possible giver: would force a reciprocal pair.
 		if out == 1 && in == 1 && lastOut == lastIn {
 			diag := fmt.Sprintf("Participant %s has fewer than 2 distinct allowed partners", participantIDs[i])
-			return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
+			return &Result{Mode: ModeImpossible, Diagnostic: diag, Reason: ReasonTooFewPartners, ParticipantID: participantIDs[i]}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
 		}
 	}
 
@@ -149,7 +162,7 @@ func Solve(participantIDs []string, exclusions []ExclusionPair) (*Result, error)
 	}
 
 	diag := "Exclusions prevent forming a valid draw without reciprocal pairs"
-	return &Result{Mode: ModeImpossible, Diagnostic: diag}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
+	return &Result{Mode: ModeImpossible, Diagnostic: diag, Reason: ReasonReciprocalOnly}, fmt.Errorf("%w: %s", ErrNoValidDraw, diag)
 }
 
 func isValidCycle(perm []int, allowed [][]bool) bool {

@@ -53,6 +53,9 @@ type ExclusionDTO struct {
 type FeasibilityDTO struct {
 	Mode       string `json:"mode"` // "single_cycle" | "sub_loops" | "impossible" | "too_few"
 	Diagnostic string `json:"diagnostic"`
+	// Reason and ParticipantName let the UI translate the diagnostic.
+	Reason          string `json:"reason"`
+	ParticipantName string `json:"participant_name"`
 }
 
 type AdminEventResponseDTO struct {

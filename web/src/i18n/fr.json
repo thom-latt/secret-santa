@@ -85,7 +85,12 @@
     "resend_failed_all": "Renvoyer les emails en échec",
     "delete_event": "Supprimer l'événement",
     "delete_confirm_title": "Supprimer définitivement l'événement ?",
-    "delete_confirm_desc": "Toutes les données (participants, exclusions, listes de souhaits et tirage) seront effacées de manière irréversible."
+    "delete_confirm_desc": "Toutes les données (participants, exclusions, listes de souhaits et tirage) seront effacées de manière irréversible.",
+    "feasibility_reason_cannot_give": "{name} ne peut offrir à personne : trop d'exclusions.",
+    "feasibility_reason_cannot_receive": "Personne ne peut offrir à {name} : trop d'exclusions.",
+    "feasibility_reason_too_few_partners": "{name} a moins de 2 partenaires possibles : le tirage imposerait un échange mutuel.",
+    "feasibility_reason_reciprocal_only": "Les exclusions rendent le tirage impossible sans échanges mutuels.",
+    "feasibility_missing": "Encore {count} participant(s) nécessaire(s) (minimum 3)"
   },
   "participant": {
     "welcome": "Bonjour {name}",
@@ -160,5 +165,39 @@
     "access_title": "Accès technique",
     "access": "L'exploitant peut techniquement lire la base de données, y compris le tirage, mais ne la consulte pas. L'organisateur peut aussi voir et modifier les adresses email des participants, c'est ainsi qu'un lien perdu est renvoyé.",
     "footer_link": "Confidentialité"
+  },
+  "errors": {
+    "event_not_found": "Événement introuvable.",
+    "participant_not_found": "Participant introuvable.",
+    "exclusion_not_found": "Exclusion introuvable.",
+    "wishlist_item_not_found": "Idée de cadeau introuvable.",
+    "draw_not_done": "Le tirage n'a pas encore eu lieu.",
+    "email_duplicate": "Cet email figure déjà dans la liste des participants.",
+    "after_draw_add_participant": "Impossible d'ajouter des participants après le tirage.",
+    "after_draw_delete_participant": "Impossible de supprimer des participants après le tirage.",
+    "after_draw_add_exclusion": "Impossible d'ajouter des exclusions après le tirage.",
+    "after_draw_delete_exclusion": "Impossible de supprimer des exclusions après le tirage.",
+    "draw_already_done": "Le tirage a déjà été effectué.",
+    "draw_conflict": "Les participants ou exclusions ont changé pendant le tirage, veuillez réessayer.",
+    "draw_too_few": "Il faut au moins 3 participants pour lancer le tirage.",
+    "max_participants": "Le maximum de 100 participants est atteint.",
+    "max_wishlist": "Le maximum de 50 idées de cadeaux est atteint.",
+    "exclusion_duplicate": "Cette exclusion existe déjà.",
+    "exclusion_distinct": "Sélectionnez deux participants différents.",
+    "organizer_fields": "Le titre, le prénom, le nom et un email valide sont obligatoires.",
+    "participant_fields": "Le prénom, le nom et un email valide sont obligatoires.",
+    "invalid_email": "Adresse email invalide.",
+    "invalid_event_details": "Informations invalides : le titre est obligatoire (200 caractères max) et la description est limitée à 2000 caractères.",
+    "invalid_event_date": "Date de l'événement invalide.",
+    "wishlist_title": "Le titre est obligatoire et limité à 200 caractères.",
+    "wishlist_note": "La note est limitée à 1000 caractères.",
+    "invalid_url": "URL invalide.",
+    "url_scheme": "Seules les URL http:// et https:// sont autorisées.",
+    "creation_disabled": "La création d'événements se fait uniquement sur invitation sur ce site.",
+    "body_too_large": "La requête est trop volumineuse.",
+    "invalid_body": "Requête invalide.",
+    "rate_limited": "Trop de requêtes, veuillez réessayer plus tard.",
+    "server": "Erreur du serveur, veuillez réessayer dans un instant.",
+    "generic": "Une erreur est survenue, veuillez réessayer."
   }
 }

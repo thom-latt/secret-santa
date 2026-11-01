@@ -95,7 +95,7 @@ describe('HomeView with the real store', () => {
     await wrapper.get('[data-testid="create-event-form"]').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('too many events created')
+    expect(wrapper.text()).toContain('Too many requests')
     expect(router.currentRoute.value.path).toBe('/')
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
     expect((wrapper.get('#event-title').element as HTMLInputElement).value).toBe('Xmas') // input is kept
@@ -136,7 +136,7 @@ describe('HomeView with the real store', () => {
     await form.get('input[type="email"]').setValue('a@b.co')
     await form.trigger('submit.prevent')
     await flushPromises()
-    expect(wrapper.text()).toContain('too many requests')
+    expect(wrapper.text()).toContain('Too many requests')
     expect(wrapper.find('[data-testid="recover-message"]').exists()).toBe(false)
 
     fail = false
@@ -144,7 +144,7 @@ describe('HomeView with the real store', () => {
     await form.trigger('submit.prevent')
     await flushPromises()
     expect(wrapper.get('[data-testid="recover-message"]').text()).toBe('An email has been sent.')
-    expect(wrapper.text()).not.toContain('too many requests')
+    expect(wrapper.text()).not.toContain('Too many requests')
     expect((form.get('input[type="email"]').element as HTMLInputElement).value).toBe('')
   })
 })
@@ -209,7 +209,7 @@ describe('ParticipantView with the real store', () => {
     const { wrapper } = await mountAt(ParticipantView, '/p/tok')
     await wrapper.get('[data-testid="discover-btn"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('participant not found')
+    expect(wrapper.text()).toContain('Participant not found.')
     expect(wrapper.find('[data-testid="revealed-target-section"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="discover-btn"]').exists()).toBe(true)
   })
@@ -281,7 +281,7 @@ describe('ParticipantView with the real store', () => {
     await wrapper.get('[data-testid="add-wishlist-form"]').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('only http:// and https:// URLs are allowed')
+    expect(wrapper.text()).toContain('Only http:// and https:// URLs are allowed.')
     expect((wrapper.get('[data-testid="new-wishlist-title"]').element as HTMLInputElement).value).toBe('Book')
     expect(wrapper.find('[data-testid="own-wishlist-empty"]').exists()).toBe(true)
 
@@ -334,7 +334,7 @@ describe('ParticipantView with the real store', () => {
     await wrapper.get('[data-testid="edit-wishlist-btn"]').trigger('click')
     await wrapper.get('[data-testid="save-wishlist-btn"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('wishlist item not found')
+    expect(wrapper.text()).toContain('Wishlist item not found.')
     expect(wrapper.find('[data-testid="edit-wishlist-title"]').exists()).toBe(true)
   })
 })

@@ -85,7 +85,12 @@
     "resend_failed_all": "Resend failed emails",
     "delete_event": "Delete event",
     "delete_confirm_title": "Permanently delete event?",
-    "delete_confirm_desc": "All data (participants, exclusions, wishlists, and draw results) will be irreversibly erased."
+    "delete_confirm_desc": "All data (participants, exclusions, wishlists, and draw results) will be irreversibly erased.",
+    "feasibility_reason_cannot_give": "{name} cannot give a gift to anyone: too many exclusions.",
+    "feasibility_reason_cannot_receive": "Nobody can give a gift to {name}: too many exclusions.",
+    "feasibility_reason_too_few_partners": "{name} has fewer than 2 possible partners: the draw would force a mutual swap.",
+    "feasibility_reason_reciprocal_only": "The exclusions make a draw impossible without mutual swaps.",
+    "feasibility_missing": "{count} more participant(s) needed (minimum 3)"
   },
   "participant": {
     "welcome": "Hello {name}",
@@ -160,5 +165,39 @@
     "access_title": "Technical access",
     "access": "The operator can technically read the database, including the draw, but does not look at it. The organizer can also see and change participant email addresses, which is how a lost link is resent.",
     "footer_link": "Privacy"
+  },
+  "errors": {
+    "event_not_found": "Event not found.",
+    "participant_not_found": "Participant not found.",
+    "exclusion_not_found": "Exclusion not found.",
+    "wishlist_item_not_found": "Wishlist item not found.",
+    "draw_not_done": "The draw has not taken place yet.",
+    "email_duplicate": "This email is already in the participant list.",
+    "after_draw_add_participant": "Participants cannot be added after the draw.",
+    "after_draw_delete_participant": "Participants cannot be removed after the draw.",
+    "after_draw_add_exclusion": "Exclusions cannot be added after the draw.",
+    "after_draw_delete_exclusion": "Exclusions cannot be removed after the draw.",
+    "draw_already_done": "The draw has already been done.",
+    "draw_conflict": "Participants or exclusions changed during the draw, please try again.",
+    "draw_too_few": "At least 3 participants are required to launch the draw.",
+    "max_participants": "The maximum of 100 participants has been reached.",
+    "max_wishlist": "The maximum of 50 wishlist items has been reached.",
+    "exclusion_duplicate": "This exclusion already exists.",
+    "exclusion_distinct": "Select two different participants.",
+    "organizer_fields": "Title, first name, last name and a valid email are required.",
+    "participant_fields": "First name, last name and a valid email are required.",
+    "invalid_email": "Invalid email address.",
+    "invalid_event_details": "Invalid details: the title is required (max 200 characters) and the description is limited to 2000 characters.",
+    "invalid_event_date": "Invalid event date.",
+    "wishlist_title": "The title is required and limited to 200 characters.",
+    "wishlist_note": "The note is limited to 1000 characters.",
+    "invalid_url": "Invalid URL.",
+    "url_scheme": "Only http:// and https:// URLs are allowed.",
+    "creation_disabled": "Event creation is by invitation only on this site.",
+    "body_too_large": "The request is too large.",
+    "invalid_body": "Invalid request.",
+    "rate_limited": "Too many requests, please try again later.",
+    "server": "Server error, please try again in a moment.",
+    "generic": "Something went wrong, please try again."
   }
 }

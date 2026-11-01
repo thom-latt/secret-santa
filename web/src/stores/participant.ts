@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { readJson } from './http'
+import { apiErrorMessage, readJson } from './http'
 
 export interface WishlistItem {
   id: string
@@ -48,7 +48,7 @@ export const useParticipantStore = defineStore('participant', () => {
       }
       const json = await readJson(res)
       if (!res.ok) {
-        throw new Error(json.error || 'Failed to load participant page')
+        throw new Error(apiErrorMessage(res, json))
       }
       data.value = json
     } catch (e: unknown) {
@@ -64,7 +64,7 @@ export const useParticipantStore = defineStore('participant', () => {
     })
     const json = await readJson(res)
     if (!res.ok) {
-      throw new Error(json.error || 'Failed to reveal target')
+      throw new Error(apiErrorMessage(res, json))
     }
     data.value = json
   }
@@ -77,7 +77,7 @@ export const useParticipantStore = defineStore('participant', () => {
     })
     const json = await readJson(res)
     if (!res.ok) {
-      throw new Error(json.error || 'Failed to add wishlist item')
+      throw new Error(apiErrorMessage(res, json))
     }
     data.value = json
   }
@@ -97,7 +97,7 @@ export const useParticipantStore = defineStore('participant', () => {
     )
     const json = await readJson(res)
     if (!res.ok) {
-      throw new Error(json.error || 'Failed to update wishlist item')
+      throw new Error(apiErrorMessage(res, json))
     }
     data.value = json
   }
@@ -109,7 +109,7 @@ export const useParticipantStore = defineStore('participant', () => {
     )
     const json = await readJson(res)
     if (!res.ok) {
-      throw new Error(json.error || 'Failed to delete wishlist item')
+      throw new Error(apiErrorMessage(res, json))
     }
     data.value = json
   }

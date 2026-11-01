@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { readJson } from './http'
+import { apiErrorMessage, readJson } from './http'
 
 export interface AdminParticipant {
   id: string
@@ -41,6 +41,8 @@ export interface AdminEventData {
   feasibility: {
     mode: 'single_cycle' | 'sub_loops' | 'impossible' | 'too_few'
     diagnostic: string
+    reason: string
+    participant_name: string
   }
 }
 
@@ -63,7 +65,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
       }
       const data = await readJson(res)
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to load event')
+        throw new Error(apiErrorMessage(res, data))
       }
       event.value = data
     } catch (e: unknown) {
@@ -90,7 +92,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     })
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to update event')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -106,7 +108,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     })
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to add participant')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -126,7 +128,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     )
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to update participant')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -138,7 +140,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     )
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to delete participant')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -160,7 +162,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     })
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to add exclusion')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -172,7 +174,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     )
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to delete exclusion')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -183,7 +185,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     })
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to execute draw')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -195,7 +197,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     )
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to resend email')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -206,7 +208,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     })
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to resend failed emails')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = data
   }
@@ -217,7 +219,7 @@ export const useEventAdminStore = defineStore('eventAdmin', () => {
     })
     const data = await readJson(res)
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to delete event')
+      throw new Error(apiErrorMessage(res, data))
     }
     event.value = null
   }

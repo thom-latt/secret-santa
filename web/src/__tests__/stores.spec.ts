@@ -4,7 +4,8 @@ import { useAppConfigStore } from '../stores/appConfig'
 import { useEventAdminStore } from '../stores/eventAdmin'
 import { useParticipantStore } from '../stores/participant'
 import { useSuperAdminStore } from '../stores/superAdmin'
-import { readJson } from '../stores/http'
+import { readJson, apiErrorMessage } from '../stores/http'
+import { setLocale } from '../i18n'
 import { safeHref } from '../utils/safeUrl'
 
 type Call = { url: string; init?: RequestInit }
@@ -29,6 +30,7 @@ function sentBody(call: Call = lastCall()): Record<string, unknown> {
 }
 
 beforeEach(() => {
+  setLocale('en')
   setActivePinia(createPinia())
   calls = []
   queue = []
@@ -44,7 +46,37 @@ beforeEach(() => {
   )
 })
 afterEach(() => {
+  setLocale('en')
   vi.unstubAllGlobals()
+})
+
+describe('apiErrorMessage', () => {
+  it('translates known backend messages into the UI language', () => {
+    setLocale('fr')
+    expect(apiErrorMessage(new Response(null, { status: 409 }), { error: 'this email is already in the participant list' })).toBe(
+      'Cet email figure déjà dans la liste des participants.',
+    )
+    setLocale('en')
+    expect(apiErrorMessage(new Response(null, { status: 404 }), { error: 'event not found' })).toBe('Event not found.')
+    setLocale('fr')
+    expect(apiErrorMessage(new Response(null, { status: 429 }), { error: 'too many requests, please try again later' })).toBe(
+      'Trop de requêtes, veuillez réessayer plus tard.',
+    )
+  })
+
+  it('falls back on the status for unknown or missing messages', () => {
+    setLocale('en')
+    expect(apiErrorMessage(new Response(null, { status: 500 }), { error: 'failed to load event' })).toBe(
+      'Server error, please try again in a moment.',
+    )
+    expect(apiErrorMessage(new Response(null, { status: 502 }), {})).toBe('Server error, please try again in a moment.')
+    expect(apiErrorMessage(new Response(null, { status: 429 }), { error: 'whatever' })).toBe(
+      'Too many requests, please try again later.',
+    )
+    expect(apiErrorMessage(new Response(null, { status: 422 }), { error: 'Alice cannot offer to anyone' })).toBe(
+      'Something went wrong, please try again.',
+    )
+  })
 })
 
 describe('readJson / safeHref helpers', () => {
@@ -90,7 +122,7 @@ describe('appConfig store', () => {
   it('keeps defaults and reports an error when the configuration cannot be loaded', async () => {
     const store = useAppConfigStore()
     enqueue(json({}, 500))
-    await expect(store.fetchPublicConfig()).rejects.toThrow('Failed to load public config')
+    await expect(store.fetchPublicConfig()).rejects.toThrow('Server error')
     expect(store.loaded).toBe(false)
   })
 
@@ -109,7 +141,7 @@ describe('appConfig store', () => {
     enqueue(json({ error: 'too many events created from this address, please try again later' }, 429))
     await expect(
       store.createEvent({ title: 'T', first_name: 'A', last_name: 'B', email: 'a@b.co', locale: 'en' }),
-    ).rejects.toThrow('too many events created')
+    ).rejects.toThrow('Too many requests')
   })
 
   it('does not leak a JSON parse error when a proxy answers with an HTML page', async () => {
@@ -117,9 +149,9 @@ describe('appConfig store', () => {
     enqueue(html(502))
     await expect(
       store.createEvent({ title: 'T', first_name: 'A', last_name: 'B', email: 'a@b.co', locale: 'en' }),
-    ).rejects.toThrow('Failed to create event')
+    ).rejects.toThrow('Server error')
     enqueue(html(413))
-    await expect(store.recoverLinks('a@b.co', 'en')).rejects.toThrow('Failed to recover links')
+    await expect(store.recoverLinks('a@b.co', 'en')).rejects.toThrow('Something went wrong')
   })
 
   it('recovers links with email and locale only', async () => {
@@ -160,12 +192,12 @@ describe('eventAdmin store', () => {
     const store = useEventAdminStore()
     enqueue(json({ error: 'boom' }, 500))
     await store.fetchEvent('t')
-    expect(store.error).toBe('boom')
+    expect(store.error).toBe('Server error, please try again in a moment.')
     expect(store.notFound).toBe(false)
 
     enqueue(html(502))
     await store.fetchEvent('t')
-    expect(store.error).toBe('Failed to load event')
+    expect(store.error).toBe('Server error, please try again in a moment.')
 
     enqueue(new TypeError('Failed to fetch'))
     await store.fetchEvent('t')
@@ -239,16 +271,16 @@ describe('eventAdmin store', () => {
 
     enqueue(json({ error: 'cannot add participants after the draw' }, 409))
     await expect(store.addParticipant('tok', { first_name: 'A', last_name: 'B', email: 'a@b.co' })).rejects.toThrow(
-      'cannot add participants after the draw',
+      'Participants cannot be added after the draw.',
     )
     enqueue(json({ error: 'participants or exclusions kept changing during the draw, please retry' }, 409))
-    await expect(store.executeDraw('tok')).rejects.toThrow('kept changing')
+    await expect(store.executeDraw('tok')).rejects.toThrow('changed during the draw')
     enqueue(json({ error: 'Alice cannot offer to anyone' }, 422))
-    await expect(store.executeDraw('tok')).rejects.toThrow('Alice cannot offer to anyone')
+    await expect(store.executeDraw('tok')).rejects.toThrow('Something went wrong')
     enqueue(html(504))
-    await expect(store.executeDraw('tok')).rejects.toThrow('Failed to execute draw')
+    await expect(store.executeDraw('tok')).rejects.toThrow('Server error')
     enqueue(html(502))
-    await expect(store.addExclusion('tok', 'a', 'b')).rejects.toThrow('Failed to add exclusion')
+    await expect(store.addExclusion('tok', 'a', 'b')).rejects.toThrow('Server error')
     expect(store.event?.id).toBe('e1')
   })
 })
@@ -271,7 +303,7 @@ describe('participant store', () => {
     enqueue(json({}, 500))
     await store.fetchSpace('t')
     expect(store.notFound).toBe(false)
-    expect(store.error).toBe('Failed to load participant page')
+    expect(store.error).toBe('Server error, please try again in a moment.')
 
     enqueue(new TypeError('network down'))
     await store.fetchSpace('t')
@@ -286,8 +318,8 @@ describe('participant store', () => {
     expect(lastCall().init?.method).toBe('POST')
     expect(store.data?.target?.first_name).toBe('T')
 
-    enqueue(json({ error: 'nope' }, 404))
-    await expect(store.revealTarget('tok')).rejects.toThrow('nope')
+    enqueue(json({ error: 'participant not found' }, 404))
+    await expect(store.revealTarget('tok')).rejects.toThrow('Participant not found.')
   })
 
   it('sends only title, url and note for wishlist items', async () => {
@@ -309,10 +341,10 @@ describe('participant store', () => {
 
     enqueue(json({ error: 'only http:// and https:// URLs are allowed' }, 400))
     await expect(store.addWishlistItem('tok', { title: 'T', url: 'javascript:1', note: '' })).rejects.toThrow(
-      'only http:// and https:// URLs are allowed',
+      'Only http:// and https:// URLs are allowed.',
     )
     enqueue(html(502))
-    await expect(store.deleteWishlistItem('tok', 'i1')).rejects.toThrow('Failed to delete wishlist item')
+    await expect(store.deleteWishlistItem('tok', 'i1')).rejects.toThrow('Server error')
   })
 })
 

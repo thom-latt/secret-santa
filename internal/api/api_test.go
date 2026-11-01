@@ -589,7 +589,8 @@ func TestEpic2DraftEventAdministration(t *testing.T) {
 	if len(ev.Exclusions) != 2 {
 		t.Fatalf("expected 2 exclusion rows with reciprocal=true, got %d", len(ev.Exclusions))
 	}
-	if ev.Feasibility.Mode != "impossible" || !strings.Contains(ev.Feasibility.Diagnostic, "Bob Dupont") {
+	if ev.Feasibility.Mode != "impossible" || !strings.Contains(ev.Feasibility.Diagnostic, "Bob Dupont") ||
+		ev.Feasibility.Reason == "" || ev.Feasibility.ParticipantName == "" {
 		t.Fatalf("expected impossible feasibility mentioning Bob Dupont, got %+v", ev.Feasibility)
 	}
 

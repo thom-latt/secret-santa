@@ -598,9 +598,10 @@ async function confirmAndDeleteEvent() {
           <span v-if="store.event.feasibility.mode === 'single_cycle'">{{ t('admin.feasibility_single_cycle') }}</span>
           <span v-else-if="store.event.feasibility.mode === 'sub_loops'">{{ t('admin.feasibility_sub_loops') }}</span>
           <span v-else-if="store.event.feasibility.mode === 'impossible'">
-            {{ t('admin.feasibility_impossible') }} — {{ store.event.feasibility.diagnostic }}
+            {{ t('admin.feasibility_impossible') }} —
+            {{ t('admin.feasibility_reason_' + store.event.feasibility.reason, { name: store.event.feasibility.participant_name }) }}
           </span>
-          <span v-else>{{ t('admin.feasibility_too_few') }} ({{ store.event.feasibility.diagnostic }})</span>
+          <span v-else>{{ t('admin.feasibility_too_few') }} ({{ t('admin.feasibility_missing', { count: Math.max(0, 3 - store.event.participants.length) }) }})</span>
         </div>
 
         <form data-testid="add-exclusion-form" class="grid grid-cols-1 sm:grid-cols-3 gap-3" @submit.prevent="handleAddExclusion">
