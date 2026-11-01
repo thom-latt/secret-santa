@@ -1,14 +1,19 @@
 package mailer
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +28,8 @@ type SMTPMailer struct {
 	pass    string
 	from    string
 	tlsMode string
+	// helloHost is announced in EHLO (host of APP_BASE_URL).
+	helloHost string
 
 	// batchBudget caps the total time SendBatch may spend; messages not sent
 	// within it fail (and can be resent) so a slow server cannot stall a
@@ -39,7 +46,12 @@ const defaultBatchBudget = 90 * time.Second
 var ErrBatchBudgetExceeded = errors.New("smtp batch time budget exceeded, resend later")
 
 func NewSMTPMailer(cfg *config.Config) *SMTPMailer {
+	helloHost := "localhost"
+	if u, err := url.Parse(cfg.AppBaseURL); err == nil && u.Hostname() != "" {
+		helloHost = u.Hostname()
+	}
 	return &SMTPMailer{
+		helloHost: helloHost,
 		host:    cfg.SMTPHost,
 		port:    cfg.SMTPPort,
 		user:    cfg.SMTPUser,
@@ -130,6 +142,12 @@ func (s *SMTPMailer) dialClient() (*smtp.Client, net.Conn, error) {
 		return nil, nil, fmt.Errorf("smtp client init: %w", err)
 	}
 
+	if err := client.Hello(s.helloHost); err != nil {
+		_ = client.Close()
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("smtp hello: %w", err)
+	}
+
 	if s.tlsMode == "starttls" {
 		if err := client.StartTLS(tlsCfg); err != nil {
 			_ = client.Close()
@@ -162,17 +180,21 @@ func sendOnClient(client *smtp.Client, fromHeader, fromAddr, toAddr string, msg 
 		return fmt.Errorf("smtp DATA: %w", err)
 	}
 
-	cleanFrom := strings.ReplaceAll(strings.ReplaceAll(fromHeader, "\r", ""), "\n", " ")
-	cleanTo := strings.ReplaceAll(strings.ReplaceAll(toAddr, "\r", ""), "\n", "")
-	cleanSubject := strings.ReplaceAll(strings.ReplaceAll(msg.Subject, "\r", ""), "\n", " ")
-	encodedSubject := mime.QEncoding.Encode("utf-8", cleanSubject)
-	dateHeader := time.Now().UTC().Format(time.RFC1123Z)
-	payload := fmt.Sprintf(
-		"Date: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
-		dateHeader, cleanFrom, cleanTo, encodedSubject, msg.Body,
-	)
-
-	if _, err := w.Write([]byte(payload)); err != nil {
+	headers, err := buildHeaders(fromHeader, toAddr, msg)
+	if err != nil {
+		_ = w.Close()
+		return err
+	}
+	if _, err := io.WriteString(w, headers); err != nil {
+		_ = w.Close()
+		return fmt.Errorf("smtp write body: %w", err)
+	}
+	qp := quotedprintable.NewWriter(w)
+	if _, err := io.WriteString(qp, msg.Body+"\n"); err != nil {
+		_ = w.Close()
+		return fmt.Errorf("smtp write body: %w", err)
+	}
+	if err := qp.Close(); err != nil {
 		_ = w.Close()
 		return fmt.Errorf("smtp write body: %w", err)
 	}
@@ -180,6 +202,43 @@ func sendOnClient(client *smtp.Client, fromHeader, fromAddr, toAddr string, msg 
 		return fmt.Errorf("smtp close data: %w", err)
 	}
 	return nil
+}
+
+func stripCRLF(s string, repl string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", ""), "\n", repl)
+}
+
+// buildHeaders returns the RFC 5322 header block, ending with the blank line.
+func buildHeaders(fromHeader, toAddr string, msg Message) (string, error) {
+	from, err := mail.ParseAddress(stripCRLF(fromHeader, " "))
+	if err != nil {
+		return "", fmt.Errorf("invalid from address %q: %w", fromHeader, err)
+	}
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return "", fmt.Errorf("message id: %w", err)
+	}
+	domain := from.Address[strings.LastIndex(from.Address, "@")+1:]
+	var sb strings.Builder
+	h := func(k, v string) { sb.WriteString(k + ": " + v + "\r\n") }
+	h("Date", time.Now().UTC().Format(time.RFC1123Z))
+	h("Message-ID", "<"+hex.EncodeToString(id[:])+"@"+domain+">")
+	h("From", from.String())
+	h("To", stripCRLF(toAddr, ""))
+	if msg.ReplyTo != "" {
+		replyTo, err := mail.ParseAddress(stripCRLF(msg.ReplyTo, " "))
+		if err != nil {
+			return "", fmt.Errorf("invalid reply-to %q: %w", msg.ReplyTo, err)
+		}
+		h("Reply-To", replyTo.String())
+	}
+	h("Subject", mime.QEncoding.Encode("utf-8", stripCRLF(msg.Subject, " ")))
+	h("MIME-Version", "1.0")
+	h("Auto-Submitted", "auto-generated")
+	h("Content-Type", "text/plain; charset=UTF-8")
+	h("Content-Transfer-Encoding", "quoted-printable")
+	sb.WriteString("\r\n")
+	return sb.String(), nil
 }
 
 func parseEnvelopeAddress(raw string) (string, error) {

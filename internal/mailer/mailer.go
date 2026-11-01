@@ -11,6 +11,7 @@ type Message struct {
 	To      string
 	Subject string
 	Body    string
+	ReplyTo string // optional
 }
 
 type Mailer interface {
@@ -60,6 +61,9 @@ type ParticipantDrawData struct {
 	Budget          string
 	Description     string
 	Token           string
+	OrganizerName   string
+	OrganizerEmail  string
+	PrivacyURL      string
 }
 
 func BuildParticipantDrawEmail(baseURL, locale, to string, data ParticipantDrawData) Message {
@@ -80,8 +84,8 @@ func BuildParticipantDrawEmail(baseURL, locale, to string, data ParticipantDrawD
 		if details.Len() > 0 {
 			extra = "\nEvent details:\n" + details.String()
 		}
-		body := fmt.Sprintf("Hello %s,\n\nThe Secret Santa draw for \"%s\" has taken place!%s\nClick your personal secret link below to discover who you drew and fill in your wishlist:\n%s\n", data.ParticipantName, data.EventTitle, extra, link)
-		return Message{To: to, Subject: subject, Body: body}
+		body := fmt.Sprintf("Hello %s,\n\nThe Secret Santa draw for \"%s\" has taken place!%s\nClick your personal secret link below to discover who you drew and fill in your wishlist:\n%s\n\nYou receive this email because %s (%s) added you to this Secret Santa event. You can reply to this email to reach them.\nHow your data is handled: %s\n", data.ParticipantName, data.EventTitle, extra, link, data.OrganizerName, data.OrganizerEmail, data.PrivacyURL)
+		return Message{To: to, Subject: subject, Body: body, ReplyTo: data.OrganizerEmail}
 	}
 
 	subject := fmt.Sprintf("Secret Santa — Votre tirage pour \"%s\"", data.EventTitle)
@@ -99,8 +103,8 @@ func BuildParticipantDrawEmail(baseURL, locale, to string, data ParticipantDrawD
 	if details.Len() > 0 {
 		extra = "\nDétails de l'événement :\n" + details.String()
 	}
-	body := fmt.Sprintf("Bonjour %s,\n\nLe tirage au sort Secret Santa pour \"%s\" a eu lieu !%s\nCliquez sur votre lien personnel secret ci-dessous pour découvrir à qui vous offrez un cadeau et remplir votre liste de souhaits :\n%s\n", data.ParticipantName, data.EventTitle, extra, link)
-	return Message{To: to, Subject: subject, Body: body}
+	body := fmt.Sprintf("Bonjour %s,\n\nLe tirage au sort Secret Santa pour \"%s\" a eu lieu !%s\nCliquez sur votre lien personnel secret ci-dessous pour découvrir à qui vous offrez un cadeau et remplir votre liste de souhaits :\n%s\n\nVous recevez cet email car %s (%s) vous a ajouté(e) à cet événement Secret Santa. Vous pouvez répondre à cet email pour le/la contacter.\nUtilisation de vos données : %s\n", data.ParticipantName, data.EventTitle, extra, link, data.OrganizerName, data.OrganizerEmail, data.PrivacyURL)
+	return Message{To: to, Subject: subject, Body: body, ReplyTo: data.OrganizerEmail}
 }
 
 type RecoveryItem struct {
@@ -124,6 +128,7 @@ func BuildRecoveryEmail(baseURL, locale, to string, orgLinks, partLinks []Recove
 				sb.WriteString(fmt.Sprintf("- %s: %s\n", item.Title, item.URL))
 			}
 		}
+		sb.WriteString("\nIf you did not request this, you can safely ignore this email.\n")
 		return Message{
 			To:      to,
 			Subject: "Secret Santa — Your active magic links",
@@ -145,6 +150,7 @@ func BuildRecoveryEmail(baseURL, locale, to string, orgLinks, partLinks []Recove
 			sb.WriteString(fmt.Sprintf("- %s : %s\n", item.Title, item.URL))
 		}
 	}
+	sb.WriteString("\nSi vous n'êtes pas à l'origine de cette demande, ignorez simplement cet email.\n")
 	return Message{
 		To:      to,
 		Subject: "Secret Santa — Vos liens magiques actifs",

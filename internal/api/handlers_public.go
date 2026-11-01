@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -60,7 +61,11 @@ func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request)
 		EventTitle:    ev.Title,
 		AdminToken:    ev.AdminToken,
 	})
-	runBackground(func() { _ = s.mailer.Send(msg) })
+	runBackground(func() {
+		if err := s.mailer.Send(msg); err != nil {
+			log.Printf("event %s: sending admin link email failed: %v", ev.ID, err)
+		}
+	})
 
 	writeJSON(w, http.StatusCreated, CreateEventResponse{
 		ID:         ev.ID,
@@ -120,7 +125,11 @@ func (s *Server) handleRecoverLinks(w http.ResponseWriter, r *http.Request) {
 		// Sent after the response so that response time does not reveal
 		// whether the address is registered.
 		msg := mailer.BuildRecoveryEmail(s.cfg.AppBaseURL, locale, email, orgItems, partItems)
-		runBackground(func() { _ = s.mailer.Send(msg) })
+		runBackground(func() {
+			if err := s.mailer.Send(msg); err != nil {
+				log.Printf("recovery email failed: %v", err)
+			}
+		})
 	}
 
 	genericMsg := "Si un événement est associé à cette adresse, un email a été envoyé."

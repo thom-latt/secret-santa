@@ -116,8 +116,14 @@ func TestEmailTemplatesFRAndEN(t *testing.T) {
 		Budget:          "20 €",
 		Description:     "Rendez-vous à 20h",
 		Token:           "tok_part_789",
+		OrganizerName:   "Jean Dupont",
+		OrganizerEmail:  "jean@example.org",
+		PrivacyURL:      "https://santa.mydomain.com/privacy",
 	})
-	for _, want := range []string{"https://santa.mydomain.com/p/tok_part_789", "2026-12-24", "20 €", "Rendez-vous à 20h"} {
+	if partFR.ReplyTo != "jean@example.org" {
+		t.Errorf("draw email must reply to the organizer, got %q", partFR.ReplyTo)
+	}
+	for _, want := range []string{"Jean Dupont", "https://santa.mydomain.com/privacy", "https://santa.mydomain.com/p/tok_part_789", "2026-12-24", "20 €", "Rendez-vous à 20h"} {
 		if !strings.Contains(partFR.Body, want) {
 			t.Errorf("FR participant email missing %q: %s", want, partFR.Body)
 		}
@@ -130,8 +136,11 @@ func TestEmailTemplatesFRAndEN(t *testing.T) {
 		Budget:          "$25",
 		Description:     "See you at 8pm",
 		Token:           "tok_part_999",
+		OrganizerName:   "John Doe",
+		OrganizerEmail:  "john@example.org",
+		PrivacyURL:      "https://santa.mydomain.com/privacy",
 	})
-	for _, want := range []string{"https://santa.mydomain.com/p/tok_part_999", "2026-12-24", "$25", "See you at 8pm"} {
+	for _, want := range []string{"John Doe", "john@example.org", "https://santa.mydomain.com/privacy", "https://santa.mydomain.com/p/tok_part_999", "2026-12-24", "$25", "See you at 8pm"} {
 		if !strings.Contains(partEN.Body, want) {
 			t.Errorf("EN participant email missing %q: %s", want, partEN.Body)
 		}
@@ -141,7 +150,7 @@ func TestEmailTemplatesFRAndEN(t *testing.T) {
 		[]RecoveryItem{{Title: "Noël FR", URL: baseURL + "/admin/events/adm1"}},
 		[]RecoveryItem{{Title: "Noël FR", URL: baseURL + "/p/part1"}},
 	)
-	if !strings.Contains(recFR.Subject, "Vos liens magiques actifs") || !strings.Contains(recFR.Body, "/admin/events/adm1") || !strings.Contains(recFR.Body, "/p/part1") {
+	if !strings.Contains(recFR.Subject, "Vos liens magiques actifs") || !strings.Contains(recFR.Body, "/admin/events/adm1") || !strings.Contains(recFR.Body, "/p/part1") || !strings.Contains(recFR.Body, "ignorez") {
 		t.Fatalf("unexpected FR recovery email: %+v", recFR)
 	}
 
@@ -149,7 +158,7 @@ func TestEmailTemplatesFRAndEN(t *testing.T) {
 		[]RecoveryItem{{Title: "Xmas EN", URL: baseURL + "/admin/events/adm2"}},
 		[]RecoveryItem{{Title: "Xmas EN", URL: baseURL + "/p/part2"}},
 	)
-	if !strings.Contains(recEN.Subject, "Your active magic links") || !strings.Contains(recEN.Body, "/admin/events/adm2") || !strings.Contains(recEN.Body, "/p/part2") {
+	if !strings.Contains(recEN.Subject, "Your active magic links") || !strings.Contains(recEN.Body, "/admin/events/adm2") || !strings.Contains(recEN.Body, "/p/part2") || !strings.Contains(recEN.Body, "ignore this email") {
 		t.Fatalf("unexpected EN recovery email: %+v", recEN)
 	}
 }

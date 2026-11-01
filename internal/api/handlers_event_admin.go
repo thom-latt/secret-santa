@@ -519,14 +519,7 @@ func (s *Server) handleDrawEvent(w http.ResponseWriter, r *http.Request) {
 	// Step 2: Outside SQLite transaction, send batch emails on pooled SMTP connection and record status per participant
 	msgs := make([]mailer.Message, len(participants))
 	for i, p := range participants {
-		msgs[i] = mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, mailer.ParticipantDrawData{
-			ParticipantName: fmt.Sprintf("%s %s", p.FirstName, p.LastName),
-			EventTitle:      ev.Title,
-			EventDate:       ev.EventDate,
-			Budget:          ev.Budget,
-			Description:     ev.Description,
-			Token:           p.ParticipantToken,
-		})
+		msgs[i] = mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, s.drawEmailData(ev, p))
 	}
 	sendErrs := s.mailer.SendBatch(msgs)
 	for i, p := range participants {
@@ -574,14 +567,7 @@ func (s *Server) handleResendParticipantEmail(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	msg := mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, mailer.ParticipantDrawData{
-		ParticipantName: fmt.Sprintf("%s %s", p.FirstName, p.LastName),
-		EventTitle:      ev.Title,
-		EventDate:       ev.EventDate,
-		Budget:          ev.Budget,
-		Description:     ev.Description,
-		Token:           p.ParticipantToken,
-	})
+	msg := mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, s.drawEmailData(ev, *p))
 	sendErr := s.mailer.Send(msg)
 	_ = s.repo.RecordEmailStatus(p.ID, sendErr)
 
@@ -620,14 +606,7 @@ func (s *Server) handleResendFailedEmails(w http.ResponseWriter, r *http.Request
 	for _, p := range participants {
 		if p.EmailSentAt == nil {
 			failedParts = append(failedParts, p)
-			msgs = append(msgs, mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, mailer.ParticipantDrawData{
-				ParticipantName: fmt.Sprintf("%s %s", p.FirstName, p.LastName),
-				EventTitle:      ev.Title,
-				EventDate:       ev.EventDate,
-				Budget:          ev.Budget,
-				Description:     ev.Description,
-				Token:           p.ParticipantToken,
-			}))
+			msgs = append(msgs, mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, s.drawEmailData(ev, p)))
 		}
 	}
 
@@ -654,4 +633,18 @@ const emailWriteDeadline = 3 * time.Minute
 func extendWriteDeadline(w http.ResponseWriter) {
 	// Best effort: ignored by writers that do not support deadlines (tests).
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(emailWriteDeadline))
+}
+
+func (s *Server) drawEmailData(ev *db.Event, p db.Participant) mailer.ParticipantDrawData {
+	return mailer.ParticipantDrawData{
+		ParticipantName: fmt.Sprintf("%s %s", p.FirstName, p.LastName),
+		EventTitle:      ev.Title,
+		EventDate:       ev.EventDate,
+		Budget:          ev.Budget,
+		Description:     ev.Description,
+		Token:           p.ParticipantToken,
+		OrganizerName:   fmt.Sprintf("%s %s", ev.OrganizerFirstName, ev.OrganizerLastName),
+		OrganizerEmail:  ev.OrganizerEmail,
+		PrivacyURL:      strings.TrimRight(s.cfg.AppBaseURL, "/") + "/privacy",
+	}
 }

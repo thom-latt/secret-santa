@@ -11,8 +11,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"mime/quotedprintable"
 	"math/big"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +29,7 @@ type receivedMail struct {
 	from, to string
 	data     string // dot-unstuffed message, CRLF normalised to LF
 	viaTLS   bool
+	helo     string
 }
 
 // fakeSMTP is a small scriptable SMTP server for exercising SMTPMailer.
@@ -102,7 +106,7 @@ func (f *fakeSMTP) handle(c net.Conn) {
 	r := bufio.NewReader(c)
 	reply(c, "220 fake ESMTP")
 
-	var from, to string
+	var from, to, helo string
 	delivered := 0
 	for {
 		line, err := r.ReadString('\n')
@@ -113,6 +117,7 @@ func (f *fakeSMTP) handle(c net.Conn) {
 		upper := strings.ToUpper(line)
 		switch {
 		case strings.HasPrefix(upper, "EHLO"):
+			helo = strings.TrimSpace(line[len("EHLO"):])
 			caps := "250-fake\r\n250-8BITMIME"
 			if f.tlsCfg != nil && !isTLS {
 				caps += "\r\n250-STARTTLS"
@@ -170,7 +175,7 @@ func (f *fakeSMTP) handle(c net.Conn) {
 				time.Sleep(f.dataReplyDelay)
 			}
 			f.mu.Lock()
-			f.mails = append(f.mails, receivedMail{from: from, to: to, data: sb.String(), viaTLS: isTLS})
+			f.mails = append(f.mails, receivedMail{from: from, to: to, data: sb.String(), viaTLS: isTLS, helo: helo})
 			f.mu.Unlock()
 			delivered++
 			if f.dropAfter > 0 && delivered >= f.dropAfter {
@@ -232,6 +237,7 @@ func mailerFor(f *fakeSMTP, mode, user, pass string) *SMTPMailer {
 		AppEnv: "production", SMTPHost: host, SMTPPort: port,
 		SMTPUser: user, SMTPPass: pass,
 		SMTPFrom: "Secret Santa <santa@example.com>", SMTPTLSMode: mode,
+		AppBaseURL: "https://santa.example.org",
 	})
 }
 
@@ -251,11 +257,13 @@ func TestSMTPSendFormatsMessageCorrectly(t *testing.T) {
 		t.Fatalf("bad envelope: %+v", got[0])
 	}
 	for _, want := range []string{
-		"From: Secret Santa <santa@example.com>\n",
+		"From: \"Secret Santa\" <santa@example.com>\n",
 		"To: bob@example.com\n",
 		"MIME-Version: 1.0\n",
 		"Content-Type: text/plain; charset=UTF-8\n",
 		"Date: ",
+		"Auto-Submitted: auto-generated\n",
+		"Content-Transfer-Encoding: quoted-printable\n",
 		"\n.line starting with a dot\n", // survived dot-stuffing
 	} {
 		if !strings.Contains(d, want) {
@@ -267,6 +275,59 @@ func TestSMTPSendFormatsMessageCorrectly(t *testing.T) {
 	}
 	if f.authCmds != 0 {
 		t.Fatal("no AUTH must be attempted without credentials")
+	}
+}
+
+func TestSMTPMessageIDHeloAndBodyEncoding(t *testing.T) {
+	f := newFakeSMTP(t, nil)
+	m := mailerFor(f, "none", "", "")
+	long := strings.Repeat("é", 600) // > 998 octets on one line
+	body := "Bonjour Zoé,\nCadeau pour Noël — 5 €\n" + long + "\n"
+	if err := m.Send(Message{To: "bob@example.com", Subject: "s", Body: body, ReplyTo: "Zoé <zoe@example.org>"}); err != nil {
+		t.Fatal(err)
+	}
+	got := f.received()[0]
+	if got.helo != "santa.example.org" {
+		t.Fatalf("EHLO must use the app host, got %q", got.helo)
+	}
+	parts := strings.SplitN(got.data, "\n\n", 2)
+	headers := parts[0]
+	if !regexp.MustCompile(`(?m)^Message-ID: <[0-9a-f]{32}@example\.com>$`).MatchString(headers) {
+		t.Fatalf("bad Message-ID:\n%s", headers)
+	}
+	if !strings.Contains(headers, "Reply-To: ") || !strings.Contains(headers, "<zoe@example.org>") {
+		t.Fatalf("missing Reply-To:\n%s", headers)
+	}
+	for _, l := range strings.Split(parts[1], "\n") {
+		if len(l) > 76 {
+			t.Fatalf("line longer than 76 octets: %d", len(l))
+		}
+		for i := 0; i < len(l); i++ {
+			if l[i] >= 0x80 {
+				t.Fatal("body must be 7-bit")
+			}
+		}
+	}
+	dec, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(parts[1])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimRight(string(dec), "\r\n") != strings.TrimRight(body, "\n") {
+		t.Fatalf("body does not decode back to the original:\n%q", dec)
+	}
+}
+
+func TestSMTPFromEncodesAccentedDisplayName(t *testing.T) {
+	f := newFakeSMTP(t, nil)
+	host, port := f.hostPort()
+	m := NewSMTPMailer(&config.Config{SMTPHost: host, SMTPPort: port, SMTPTLSMode: "none",
+		SMTPFrom: "Père Noël <santa@example.com>", AppBaseURL: "https://santa.example.org"})
+	if err := m.Send(Message{To: "bob@example.com", Subject: "s", Body: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	headers := strings.SplitN(f.received()[0].data, "\n\n", 2)[0]
+	if !strings.Contains(headers, "From: =?utf-8?q?P=C3=A8re_No=C3=ABl?= <santa@example.com>") {
+		t.Fatalf("display name must be encoded:\n%s", headers)
 	}
 }
 
