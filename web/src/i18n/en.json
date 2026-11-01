@@ -142,5 +142,23 @@
     "retry": "Try again",
     "back_home": "Back to Home",
     "loading": "Loading..."
+  },
+  "privacy": {
+    "title": "Privacy notice",
+    "controller_title": "Who is responsible",
+    "controller": "This Secret Santa site is run by {name}, the data controller, as a private service for friends and family. Contact: {email}.",
+    "purpose_title": "Purpose and legal basis",
+    "purpose": "Your data is used only to run the gift draw and email each participant who they give a gift to. The legal basis is the legitimate interest of the organizer and the operator in running this exchange.",
+    "data_title": "Data stored",
+    "data": "First and last names, email addresses, wishlists, the draw result, and creation timestamps.",
+    "recipients_title": "Who receives it",
+    "recipients": "The event organizer (who sees the participant list), the operator's email provider (to deliver emails) and the hosting provider. Your data is not sold or used for advertising.",
+    "retention_title": "Retention",
+    "retention": "An event and all its data are deleted automatically 30 days after the event date, or 12 months after creation when no date was set.",
+    "rights_title": "Your rights",
+    "rights": "You can ask {email} for access, correction or deletion of your data. If you believe your rights are not respected, you can lodge a complaint with the CNIL (www.cnil.fr).",
+    "access_title": "Technical access",
+    "access": "The operator can technically read the database, including the draw, but does not look at it. The organizer can also see and change participant email addresses, which is how a lost link is resent.",
+    "footer_link": "Privacy"
   }
 }

@@ -4,6 +4,8 @@ import { readJson } from './http'
 
 export const useAppConfigStore = defineStore('appConfig', () => {
   const allowPublicEventCreation = ref<boolean>(false)
+  const operatorName = ref<string>('')
+  const operatorEmail = ref<string>('')
   const loaded = ref<boolean>(false)
 
   async function fetchPublicConfig() {
@@ -13,6 +15,8 @@ export const useAppConfigStore = defineStore('appConfig', () => {
     }
     const data = await readJson(res)
     allowPublicEventCreation.value = Boolean(data.allow_public_event_creation)
+    operatorName.value = String(data.operator_name ?? '')
+    operatorEmail.value = String(data.operator_email ?? '')
     loaded.value = true
   }
 
@@ -50,6 +54,8 @@ export const useAppConfigStore = defineStore('appConfig', () => {
 
   return {
     allowPublicEventCreation,
+    operatorName,
+    operatorEmail,
     loaded,
     fetchPublicConfig,
     createEvent,

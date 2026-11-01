@@ -40,6 +40,10 @@ type Config struct {
 	// TrustProxy makes rate limiting use the X-Forwarded-For header set by a
 	// trusted reverse proxy instead of the TCP peer address.
 	TrustProxy bool
+	// OperatorName and OperatorEmail identify the data controller on the
+	// privacy page (required in production).
+	OperatorName  string
+	OperatorEmail string
 }
 
 func Load() (*Config, error) {
@@ -121,6 +125,8 @@ func Load() (*Config, error) {
 		SMTPFrom:               strings.TrimSpace(getEnv("SMTP_FROM", "Secret Santa <noreply@example.com>")),
 		SMTPTLSMode:            tlsMode,
 		TrustProxy:             trustProxy,
+		OperatorName:           strings.TrimSpace(getEnv("OPERATOR_NAME", "")),
+		OperatorEmail:          strings.TrimSpace(getEnv("OPERATOR_EMAIL", "")),
 	}
 
 	if appEnv == "production" {
@@ -138,6 +144,12 @@ func Load() (*Config, error) {
 		}
 		if cfg.SMTPHost == "" {
 			return nil, errors.New("SMTP_HOST is required in production")
+		}
+		if cfg.OperatorName == "" {
+			return nil, errors.New("OPERATOR_NAME is required in production (shown on the privacy page)")
+		}
+		if _, err := mail.ParseAddress(cfg.OperatorEmail); err != nil {
+			return nil, errors.New("OPERATOR_EMAIL must be a valid email address in production (shown on the privacy page)")
 		}
 	}
 

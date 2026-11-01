@@ -142,5 +142,23 @@
     "retry": "Réessayer",
     "back_home": "Retour à l'accueil",
     "loading": "Chargement..."
+  },
+  "privacy": {
+    "title": "Politique de confidentialité",
+    "controller_title": "Responsable du traitement",
+    "controller": "Ce site Secret Santa est exploité par {name}, responsable du traitement, comme service privé pour des proches. Contact : {email}.",
+    "purpose_title": "Finalité et base légale",
+    "purpose": "Vos données servent uniquement à organiser le tirage au sort et à envoyer à chaque participant la personne à qui il offre un cadeau. La base légale est l'intérêt légitime de l'organisateur et de l'exploitant à organiser cet échange.",
+    "data_title": "Données conservées",
+    "data": "Nom et prénom, adresses email, listes de souhaits, résultat du tirage et dates de création.",
+    "recipients_title": "Destinataires",
+    "recipients": "L'organisateur de l'événement (qui voit la liste des participants), le fournisseur email de l'exploitant (pour l'envoi des messages) et l'hébergeur. Vos données ne sont ni vendues ni utilisées à des fins publicitaires.",
+    "retention_title": "Durée de conservation",
+    "retention": "Un événement et toutes ses données sont supprimés automatiquement 30 jours après la date de l'événement, ou 12 mois après sa création si aucune date n'a été indiquée.",
+    "rights_title": "Vos droits",
+    "rights": "Vous pouvez demander à {email} l'accès, la rectification ou la suppression de vos données. Si vous estimez que vos droits ne sont pas respectés, vous pouvez déposer une réclamation auprès de la CNIL (www.cnil.fr).",
+    "access_title": "Accès technique",
+    "access": "L'exploitant peut techniquement lire la base de données, y compris le tirage, mais ne la consulte pas. L'organisateur peut aussi voir et modifier les adresses email des participants, c'est ainsi qu'un lien perdu est renvoyé.",
+    "footer_link": "Confidentialité"
   }
 }

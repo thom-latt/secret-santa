@@ -75,6 +75,8 @@ func newTestEnvWith(t *testing.T, mutate func(*config.Config)) *testEnv {
 		SuperAdminEmail:        "super@example.com",
 		SuperAdminPasswordHash: mustHashPassword(t, "secret-password-123"),
 		SessionSecret:          "0123456789abcdef0123456789abcdef",
+		OperatorName:           "Jane Doe",
+		OperatorEmail:          "jane@example.org",
 	}
 	if mutate != nil {
 		mutate(cfg)
@@ -1608,5 +1610,17 @@ func TestFreshDatabaseIsInvitationOnly(t *testing.T) {
 	})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestPublicConfigExposesOperatorIdentity(t *testing.T) {
+	env := newTestEnv(t)
+	var got PublicConfigDTO
+	rec := doJSON(t, env.handler, http.MethodGet, "/api/public/config", nil)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OperatorName != "Jane Doe" || got.OperatorEmail != "jane@example.org" {
+		t.Fatalf("operator identity missing from public config: %+v", got)
 	}
 }

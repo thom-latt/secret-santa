@@ -15,6 +15,7 @@ func cleanEnv(t *testing.T) {
 	for _, k := range []string{
 		"APP_ENV", "PORT", "APP_BASE_URL", "DB_PATH", "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD_HASH",
 		"SESSION_SECRET", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM", "SMTP_TLS_MODE", "TRUST_PROXY",
+		"OPERATOR_NAME", "OPERATOR_EMAIL",
 	} {
 		old, had := os.LookupEnv(k)
 		_ = os.Unsetenv(k)
@@ -53,6 +54,8 @@ func prodEnv(t *testing.T) {
 	t.Setenv("SMTP_HOST", "smtp.example.com")
 	t.Setenv("SUPER_ADMIN_EMAIL", "owner@santa.example.org")
 	t.Setenv("SMTP_FROM", "Secret Santa <santa@santa.example.org>")
+	t.Setenv("OPERATOR_NAME", "Jane Doe")
+	t.Setenv("OPERATOR_EMAIL", "jane@santa.example.org")
 }
 
 func TestLoadDevelopmentDefaults(t *testing.T) {
@@ -110,6 +113,9 @@ func TestLoadProductionValid(t *testing.T) {
 	if !cfg.IsSecureCookie() || !cfg.TrustProxy {
 		t.Fatalf("expected secure cookies and TrustProxy, got %+v", cfg)
 	}
+	if cfg.OperatorName != "Jane Doe" || cfg.OperatorEmail != "jane@santa.example.org" {
+		t.Fatalf("operator identity not loaded: %q %q", cfg.OperatorName, cfg.OperatorEmail)
+	}
 }
 
 func TestLoadRejectsInvalidConfigurations(t *testing.T) {
@@ -139,6 +145,9 @@ func TestLoadRejectsInvalidConfigurations(t *testing.T) {
 		{"prod default admin email", true, map[string]string{"SUPER_ADMIN_EMAIL": "admin@example.com"}, "SUPER_ADMIN_EMAIL"},
 		{"prod default smtp from", true, map[string]string{"SMTP_FROM": "Secret Santa <noreply@example.com>"}, "SMTP_FROM"},
 		{"prod unparsable smtp from", true, map[string]string{"SMTP_FROM": "not an address"}, "SMTP_FROM"},
+		{"prod without operator name", true, map[string]string{"OPERATOR_NAME": " "}, "OPERATOR_NAME"},
+		{"prod without operator email", true, map[string]string{"OPERATOR_EMAIL": ""}, "OPERATOR_EMAIL"},
+		{"prod invalid operator email", true, map[string]string{"OPERATOR_EMAIL": "not an address"}, "OPERATOR_EMAIL"},
 		{"bad TRUST_PROXY", false, map[string]string{"TRUST_PROXY": "maybe"}, "invalid TRUST_PROXY"},
 	}
 	for _, tc := range cases {

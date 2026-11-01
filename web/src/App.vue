@@ -38,5 +38,11 @@ onErrorCaptured(() => {
       <ErrorView v-if="hasServerError" :status="500" :on-retry="() => (hasServerError = false)" />
       <router-view v-else />
     </main>
+
+    <footer class="border-t border-slate-200 bg-white">
+      <div class="mx-auto max-w-5xl px-4 py-3 text-sm text-slate-500">
+        <router-link to="/privacy" class="underline hover:text-slate-700">{{ t('privacy.footer_link') }}</router-link>
+      </div>
+    </footer>
   </div>
 </template>

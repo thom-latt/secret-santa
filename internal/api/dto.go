@@ -3,7 +3,9 @@ package api
 import "time"
 
 type PublicConfigDTO struct {
-	AllowPublicEventCreation bool `json:"allow_public_event_creation"`
+	AllowPublicEventCreation bool   `json:"allow_public_event_creation"`
+	OperatorName             string `json:"operator_name"`
+	OperatorEmail            string `json:"operator_email"`
 }
 
 type CreateEventRequest struct {

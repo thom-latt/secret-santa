@@ -16,7 +16,11 @@ func (s *Server) handleGetPublicConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load settings")
 		return
 	}
-	writeJSON(w, http.StatusOK, PublicConfigDTO{AllowPublicEventCreation: allow})
+	writeJSON(w, http.StatusOK, PublicConfigDTO{
+		AllowPublicEventCreation: allow,
+		OperatorName:             s.cfg.OperatorName,
+		OperatorEmail:            s.cfg.OperatorEmail,
+	})
 }
 
 func (s *Server) handleCreatePublicEvent(w http.ResponseWriter, r *http.Request) {

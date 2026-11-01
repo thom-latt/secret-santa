@@ -6,6 +6,7 @@ import { i18n, setLocale } from '../i18n'
 import HomeView from '../views/HomeView.vue'
 import ParticipantView from '../views/ParticipantView.vue'
 import SuperAdminView from '../views/SuperAdminView.vue'
+import PrivacyView from '../views/PrivacyView.vue'
 import { routes } from '../router'
 
 // ------------------------------------------------------------------ fake backend
@@ -559,5 +560,35 @@ describe('SuperAdminView with the real store', () => {
     await wrapper.get('[data-testid="superadmin-confirm-delete-btn"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="superadmin-login-form"]').exists()).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------- PrivacyView
+
+describe('PrivacyView', () => {
+  beforeEach(() => setLocale('en'))
+
+  it('names the operator, states the retention periods and is routed at /privacy', async () => {
+    on('GET', '/api/public/config', () =>
+      json({ allow_public_event_creation: false, operator_name: 'Jane Doe', operator_email: 'jane@example.org' }),
+    )
+    const { wrapper, router } = await mountAt(PrivacyView, '/privacy')
+    expect(router.currentRoute.value.name).toBe('privacy')
+    const text = wrapper.text()
+    expect(text).toContain('Jane Doe')
+    expect(text).toContain('30 days')
+    expect(text).toContain('12 months')
+    expect(wrapper.get('a[href="mailto:jane@example.org"]').text()).toBe('jane@example.org')
+  })
+
+  it('renders in French', async () => {
+    setLocale('fr')
+    on('GET', '/api/public/config', () =>
+      json({ allow_public_event_creation: false, operator_name: 'Jane Doe', operator_email: 'jane@example.org' }),
+    )
+    const { wrapper } = await mountAt(PrivacyView, '/privacy')
+    expect(wrapper.text()).toContain('CNIL')
+    expect(wrapper.text()).toContain('30 jours')
+    expect(wrapper.text()).toContain('12 mois')
   })
 })
