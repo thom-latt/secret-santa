@@ -59,6 +59,21 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	purge := func() {
+		n, err := repo.PurgeExpiredEvents(time.Now())
+		if err != nil {
+			log.Printf("retention purge failed: %v", err)
+			return
+		}
+		log.Printf("retention purge: %d expired events deleted", n)
+	}
+	purge()
+	go func() {
+		for range time.Tick(24 * time.Hour) {
+			purge()
+		}
+	}()
+
 	go func() {
 		log.Printf("Secret Santa server listening on :%s (env=%s, base_url=%s)", cfg.Port, cfg.AppEnv, cfg.AppBaseURL)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

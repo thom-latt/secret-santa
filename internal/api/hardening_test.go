@@ -994,7 +994,7 @@ func TestEventUpdateAndParticipantBoundaries(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"title": title, "description": desc, "event_date": date, "budget": budget})
 		return doRaw(env.handler, http.MethodPut, base, string(body), nil, "").Code
 	}
-	if c := put(strings.Repeat("t", 200), strings.Repeat("d", 2000), strings.Repeat("x", 100), strings.Repeat("b", 100)); c != http.StatusOK {
+	if c := put(strings.Repeat("t", 200), strings.Repeat("d", 2000), "2026-12-25", strings.Repeat("b", 100)); c != http.StatusOK {
 		t.Fatalf("max lengths must be accepted, got %d", c)
 	}
 	for name, c := range map[string]int{
@@ -1002,11 +1002,17 @@ func TestEventUpdateAndParticipantBoundaries(t *testing.T) {
 		"empty title": put("", "", "", ""),
 		"description": put("T", strings.Repeat("d", 2001), "", ""),
 		"date":        put("T", "", strings.Repeat("x", 101), ""),
+		"bad date":    put("T", "", "25/12/2026", ""),
+		"not a date":  put("T", "", "next friday", ""),
 		"budget":      put("T", "", "", strings.Repeat("b", 101)),
 	} {
 		if c != http.StatusBadRequest {
 			t.Fatalf("%s too long: expected 400, got %d", name, c)
 		}
+	}
+
+	if c := put("T", "", "", ""); c != http.StatusOK {
+		t.Fatalf("empty date must be accepted, got %d", c)
 	}
 
 	// duplicate emails are refused, case-insensitively, on add and on update

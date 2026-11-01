@@ -796,6 +796,20 @@ func (r *Repository) DeleteEvent(eventID string) error {
 	return nil
 }
 
+// shortcut: retention periods are constants, make them configurable if an operator asks.
+// PurgeExpiredEvents deletes events 30 days after their date, or 12 months
+// after creation when undated. Cascades remove participants, exclusions and wishlists.
+func (r *Repository) PurgeExpiredEvents(now time.Time) (int64, error) {
+	ts := now.UTC().Format("2006-01-02 15:04:05")
+	res, err := r.db.Exec(`DELETE FROM events
+		WHERE (event_date <> '' AND event_date < date(?, '-30 days'))
+		   OR created_at < datetime(?, '-12 months')`, ts, ts)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 type RecoveredOrganizerLink struct {
 	EventTitle string
 	AdminToken string

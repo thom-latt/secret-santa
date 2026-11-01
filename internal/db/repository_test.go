@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestRepo(t *testing.T) (*Repository, *sql.DB) {
@@ -391,5 +392,42 @@ func TestFindLinksByEmailOnlyListsDrawnParticipantEvents(t *testing.T) {
 	_, partLinks, err = repo.FindLinksByEmail(strings.ToUpper(email))
 	if err != nil || len(partLinks) != 1 {
 		t.Fatalf("expected 1 participant link (case-insensitive), got %+v err=%v", partLinks, err)
+	}
+}
+
+func TestPurgeExpiredEvents(t *testing.T) {
+	repo, conn := newTestRepo(t)
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	mk := func(date, createdAt string) string {
+		ev, _ := seedEvent(t, repo, 3)
+		if _, err := conn.Exec(`UPDATE events SET event_date = ?, created_at = ? WHERE id = ?`, date, createdAt, ev.ID); err != nil {
+			t.Fatal(err)
+		}
+		return ev.ID
+	}
+	recent := now.AddDate(0, 0, -5).Format("2006-01-02 15:04:05")
+	pastDate := mk("2026-05-10", recent)          // 36 days ago: purged
+	recentDate := mk("2026-06-01", recent)        // 14 days ago: kept
+	futureDate := mk("2026-12-25", recent)        // kept
+	oldUndated := mk("", "2025-06-01 00:00:00")   // > 12 months: purged
+	freshUndated := mk("", "2026-01-01 00:00:00") // kept
+
+	n, err := repo.PurgeExpiredEvents(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 purged, got %d", n)
+	}
+	for id, wantGone := range map[string]bool{pastDate: true, oldUndated: true, recentDate: false, futureDate: false, freshUndated: false} {
+		_, err := repo.GetEventByID(id)
+		if gone := errors.Is(err, ErrNotFound); gone != wantGone {
+			t.Fatalf("event %s: gone=%v, want %v (err=%v)", id, gone, wantGone, err)
+		}
+	}
+	var orphans int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM participants WHERE event_id IN (?, ?)`, pastDate, oldUndated).Scan(&orphans); err != nil || orphans != 0 {
+		t.Fatalf("participants must cascade: %d, %v", orphans, err)
 	}
 }

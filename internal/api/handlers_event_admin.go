@@ -150,6 +150,13 @@ func (s *Server) handleUpdateAdminEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if req.EventDate != "" {
+		if _, err := time.Parse("2006-01-02", req.EventDate); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid event date (expected YYYY-MM-DD)")
+			return
+		}
+	}
+
 	updated, err := s.repo.UpdateEventDetails(ev.ID, req.Title, req.Description, req.EventDate, req.Budget, req.OrganizerParticipates)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update event")
