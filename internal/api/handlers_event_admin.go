@@ -567,6 +567,11 @@ func (s *Server) handleResendParticipantEmail(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if !s.limiter.take("resend:"+p.ID, resendParticipantLimit, time.Hour) {
+		writeError(w, http.StatusTooManyRequests, "too many resends for this participant, please try again later")
+		return
+	}
+
 	msg := mailer.BuildParticipantDrawEmail(s.cfg.AppBaseURL, ev.Locale, p.Email, s.drawEmailData(ev, *p))
 	sendErr := s.mailer.Send(msg)
 	_ = s.repo.RecordEmailStatus(p.ID, sendErr)
@@ -592,6 +597,11 @@ func (s *Server) handleResendFailedEmails(w http.ResponseWriter, r *http.Request
 	}
 	if ev.Status != "drawn" {
 		writeError(w, http.StatusBadRequest, "event is not drawn yet")
+		return
+	}
+
+	if !s.limiter.take("resend-failed:"+ev.ID, resendFailedLimit, time.Hour) {
+		writeError(w, http.StatusTooManyRequests, "too many resends for this event, please try again later")
 		return
 	}
 

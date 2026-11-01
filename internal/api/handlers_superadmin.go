@@ -60,7 +60,9 @@ func (s *Server) requireSuperAdmin(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	ip := s.clientIP(r)
-	if s.limiter.count("login:"+ip, time.Minute) >= loginFailureLimit {
+	// Reserve the slot before the slow password check: counting first and
+	// recording after lets parallel requests all pass the check.
+	if !s.limiter.take("login:"+ip, loginFailureLimit, time.Minute) {
 		writeError(w, http.StatusTooManyRequests, "too many login attempts, please try again later")
 		return
 	}
@@ -78,7 +80,6 @@ func (s *Server) handleSuperAdminLogin(w http.ResponseWriter, r *http.Request) {
 	passMatch := config.VerifyPassword(req.Password, s.cfg.SuperAdminPasswordHash)
 
 	if emailMatch != 1 || !passMatch {
-		s.limiter.record("login:" + ip)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}

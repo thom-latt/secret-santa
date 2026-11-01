@@ -88,7 +88,12 @@ func seedDrawnEvent(t *testing.T, env *testEnv, n int) (*db.Event, []db.Particip
 
 func loginSuper(t *testing.T, env *testEnv) *http.Cookie {
 	t.Helper()
-	rec := doJSON(t, env.handler, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{Email: "super@example.com", Password: "secret-password-123"})
+	return loginSuperOn(t, env.handler)
+}
+
+func loginSuperOn(t *testing.T, h http.Handler) *http.Cookie {
+	t.Helper()
+	rec := doJSON(t, h, http.MethodPost, "/api/superadmin/login", SuperAdminLoginRequest{Email: "super@example.com", Password: "secret-password-123"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("super admin login failed: %d %s", rec.Code, rec.Body.String())
 	}
@@ -189,7 +194,9 @@ func TestSuperAdminLogoutRequiresValidSession(t *testing.T) {
 func TestSuperAdminCookieValidation(t *testing.T) {
 	env := newTestEnv(t)
 	defer env.cleanup()
-	good := loginSuper(t, env)
+	handler, srv := newRouter(env.cfg, env.repo, env.mailer, nil)
+	epoch := srv.sessionEpoch.Load()
+	good := loginSuperOn(t, handler)
 	secret, hash := env.cfg.SessionSecret, env.cfg.SuperAdminPasswordHash
 	future := time.Now().Add(time.Hour).Unix()
 
@@ -200,22 +207,22 @@ func TestSuperAdminCookieValidation(t *testing.T) {
 		"no signature":          fmt.Sprint(future) + ".",
 		"non-numeric expiry":    "abc." + strings.Repeat("0", 64),
 		"tampered signature":    tampered,
-		"expired":               forgeSuperToken(secret, time.Now().Add(-time.Minute).Unix(), 0, env.cfg.SuperAdminEmail, hash),
-		"wrong secret":          forgeSuperToken("another-secret-another-secret-xx", future, 0, env.cfg.SuperAdminEmail, hash),
-		"wrong epoch":           forgeSuperToken(secret, future, 7, env.cfg.SuperAdminEmail, hash),
+		"expired":               forgeSuperToken(secret, time.Now().Add(-time.Minute).Unix(), epoch, env.cfg.SuperAdminEmail, hash),
+		"wrong secret":          forgeSuperToken("another-secret-another-secret-xx", future, epoch, env.cfg.SuperAdminEmail, hash),
+		"wrong epoch":           forgeSuperToken(secret, future, epoch+7, env.cfg.SuperAdminEmail, hash),
 		"wrong email":           forgeSuperToken(secret, future, 0, "intruder@example.com", hash),
-		"wrong password hash":   forgeSuperToken(secret, future, 0, env.cfg.SuperAdminEmail, "x"),
+		"wrong password hash":   forgeSuperToken(secret, future, epoch, env.cfg.SuperAdminEmail, "x"),
 		"extended expiry reuse": fmt.Sprint(future+86400) + "." + strings.SplitN(good.Value, ".", 2)[1],
 	}
 	for name, v := range cases {
-		rec := doJSON(t, env.handler, http.MethodGet, "/api/superadmin/overview", nil, &http.Cookie{Name: superAdminCookieName, Value: v})
+		rec := doJSON(t, handler, http.MethodGet, "/api/superadmin/overview", nil, &http.Cookie{Name: superAdminCookieName, Value: v})
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("%s: expected 401, got %d", name, rec.Code)
 		}
 	}
 	// control: an independently forged token with the right parameters is accepted
-	forged := forgeSuperToken(secret, future, 0, env.cfg.SuperAdminEmail, hash)
-	if rec := doJSON(t, env.handler, http.MethodGet, "/api/superadmin/overview", nil, &http.Cookie{Name: superAdminCookieName, Value: forged}); rec.Code != http.StatusOK {
+	forged := forgeSuperToken(secret, future, epoch, env.cfg.SuperAdminEmail, hash)
+	if rec := doJSON(t, handler, http.MethodGet, "/api/superadmin/overview", nil, &http.Cookie{Name: superAdminCookieName, Value: forged}); rec.Code != http.StatusOK {
 		t.Fatalf("test helper out of sync with the server token format: %d", rec.Code)
 	}
 

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -29,10 +31,13 @@ type Server struct {
 
 // Rate limits (per client IP unless noted).
 const (
-	loginFailureLimit = 10 // failed super-admin logins per minute
+	loginFailureLimit = 10 // super-admin login attempts per minute
 	createEventLimit  = 20 // event creations per hour
 	recoverIPLimit    = 10 // recovery requests per 10 minutes
 	recoverEmailLimit = 3  // recovery emails per address per hour
+
+	resendParticipantLimit = 3 // resends per participant per hour
+	resendFailedLimit      = 5 // "resend failed" calls per event per hour
 )
 
 var backgroundTasks sync.WaitGroup
@@ -52,6 +57,12 @@ var runBackground = func(f func()) {
 func WaitForBackgroundTasks() { backgroundTasks.Wait() }
 
 func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticFS fs.FS) http.Handler {
+	h, _ := newRouter(cfg, repo, m, staticFS)
+	return h
+}
+
+// newRouter also returns the Server so tests can inspect its session epoch.
+func newRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticFS fs.FS) (http.Handler, *Server) {
 	s := &Server{
 		cfg:      cfg,
 		repo:     repo,
@@ -59,6 +70,13 @@ func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 		staticFS: staticFS,
 		limiter:  newRateLimiter(),
 	}
+
+	// Random epoch: a restart invalidates every session, including logged-out ones.
+	var seed [8]byte
+	if _, err := rand.Read(seed[:]); err != nil {
+		panic("random session epoch: " + err.Error())
+	}
+	s.sessionEpoch.Store(binary.BigEndian.Uint64(seed[:]))
 
 	mux := http.NewServeMux()
 
@@ -137,7 +155,7 @@ func NewRouter(cfg *config.Config, repo *db.Repository, m mailer.Mailer, staticF
 	}
 
 	cop := http.NewCrossOriginProtection()
-	return withSecurityHeaders(cfg, cop.Handler(mux))
+	return withSecurityHeaders(cfg, cop.Handler(mux)), s
 }
 
 const maxJSONBodyBytes = 64 << 10
@@ -150,7 +168,8 @@ func withSecurityHeaders(cfg *config.Config, next http.Handler) http.Handler {
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 		if cfg != nil && cfg.IsSecureCookie() {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
