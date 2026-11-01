@@ -48,7 +48,11 @@ const knownErrors: Record<string, string> = {
   "too many requests, please try again later": 'rate_limited',
   "too many events created from this address, please try again later": 'rate_limited',
   "request body too large": 'body_too_large',
-  "invalid request body": 'invalid_body'
+  "invalid request body": 'invalid_body',
+  "invalid feedback": 'invalid_feedback',
+  "too many feedback reports, please try again later": 'feedback_rate_limited',
+  "failed to send feedback": 'feedback_send_failed',
+  "feedback is not available on this instance": 'feedback_unavailable'
 }
 
 /**

@@ -11,7 +11,7 @@ onMounted(() => {
   config.fetchPublicConfig().catch(() => {})
 })
 
-const sections = ['purpose', 'data', 'recipients', 'retention', 'access'] as const
+const sections = ['purpose', 'data', 'recipients', 'retention', 'access', 'feedback'] as const
 </script>
 
 <template>

@@ -35,10 +35,10 @@ flowchart LR
   - Direct architecture without an intermediate service layer: handlers in `internal/api` directly call `internal/db`, `internal/draw`, and `internal/mailer`.
   - **Pure Go, CGO-free** SQLite driver (`modernc.org/sqlite`) enabling straightforward cross-compilation (`amd64` and `arm64` for all Synology, QNAP, TrueNAS, and Raspberry Pi NAS models) and a minimalist final container (`alpine` or `distroless`).
   - Compiled frontend build embedded directly into the Go binary via `embed.FS` (exposed by `web/embed.go`), with SPA fallback to `index.html` only for non-API routes (`!/api/*`) without a static asset file extension.
-  - Application-level, in-memory rate limiting as a second line of defence behind the front-facing Nginx (which remains the primary one): Super Admin login (10 failed attempts per client per minute), public event creation (20 per client per hour), link recovery (10 requests per client per 10 minutes and 3 emails per address per hour; beyond the per-address limit the answer stays the same generic `200`, so the throttle is not observable). Clients are identified by the TCP peer address, or by the right-most `X-Forwarded-For` entry when `TRUST_PROXY=true` (to be enabled only behind a reverse proxy that sets that header).
+  - Application-level, in-memory rate limiting as a second line of defence behind the front-facing Nginx (which remains the primary one): Super Admin login (10 failed attempts per client per minute), public event creation (20 per client per hour), link recovery (10 requests per client per 10 minutes and 3 emails per address per hour; beyond the per-address limit the answer stays the same generic `200`, so the throttle is not observable), feedback reports (10 per client per hour and 20 per event per hour). Clients are identified by the TCP peer address, or by the right-most `X-Forwarded-For` entry when `TRUST_PROXY=true` (to be enabled only behind a reverse proxy that sets that header).
   - Resend limits: each participant can be sent their link at most 3 times per hour, and the "resend failed" action is limited to 5 calls per event per hour. Super Admin sessions are signed with a random per-process epoch, so a server restart invalidates every session (a logout also invalidates them).
   - Strict JSON decoding of every request body: unknown fields, trailing data and bodies over 64 KiB are rejected (`400`, or `413` for oversized bodies).
-  - Emails triggered by public endpoints (event creation, link recovery) are sent after the HTTP response, so the response time never reveals whether an address is registered; pending sends are awaited on graceful shutdown. Draw and resend endpoints send their batch synchronously (bounded to a 90 s budget, unsent messages being reported as failed and resendable) and extend the response write deadline accordingly.
+  - Emails triggered by public endpoints (event creation, link recovery) are sent after the HTTP response, so the response time never reveals whether an address is registered; pending sends are awaited on graceful shutdown. Feedback reports are sent to the operator synchronously (a mail failure answers `502` so the user can retry). Draw and resend endpoints send their batch synchronously (bounded to a 90 s budget, unsent messages being reported as failed and resendable) and extend the response write deadline accordingly.
   - Global HTTP security headers: `Referrer-Policy: no-referrer` (prevents any leakage of URL tokens to external merchant websites linked in wishlists), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`.
 - **Database**: **SQLite**
   - **Retention**: events are deleted automatically (cascading to participants, exclusions and wishlists) 30 days after `event_date`, or 12 months after creation when undated; the purge runs at startup and every 24 h.
@@ -52,7 +52,7 @@ flowchart LR
   - Mandatory `APP_BASE_URL` variable (e.g., `https://santa.mydomain.com`) to generate reliable absolute magic links behind Nginx without relying on the HTTP `Host` header.
   - **In Production (`APP_ENV=production`)**: Sent via standard SMTP protocol supporting all 3 TLS modes (`SMTP_TLS_MODE=starttls|tls|none` for ports 587, 465, or 25).
   - **In Development (`APP_ENV=development`)**: **No email is ever sent over the network**. All emails are intercepted by a `MockMailer` that clearly prints them to the console (with clickable magic links) and keeps them in memory for tests.
-- **Privacy page**: `/privacy` states the data collected, the retention rule and the operator identity (`OPERATOR_NAME`, `OPERATOR_EMAIL`, both required in production); emails link to it.
+- **Privacy page**: `/privacy` states the data collected, the retention rule and the operator identity (`OPERATOR_NAME`, `OPERATOR_EMAIL`, both required in production); emails link to it. `OPERATOR_EMAIL` also receives user feedback reports (see US-7.3); without it the feedback feature is disabled (`503`) and its button hidden.
 - **Authentication**:
   - **Zero password** for organizers and participants: authentication exclusively via secret magic links (`admin_token` and `participant_token`).
   - **Super Administrator only**: email/password authentication (`SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` defined in `.env`).
@@ -361,6 +361,12 @@ flowchart TD
   - *So that* I can test freely with any email addresses without risking accidental delivery.
   - **Acceptance Criteria**: In `development` mode, the `Mailer` exclusively uses the `ConsoleMockMailer` implementation (no SMTP network connection is opened, even if `SMTP_*` variables are present).
 
+- **US-7.3 — Report a Problem or Share an Idea**
+  - *As an* organizer or participant,
+  - *I want* to send the operator a bug report, a remark or an idea from my admin or participant page,
+  - *So that* problems get fixed without me having to find the operator's address.
+  - **Acceptance Criteria**: A "Report a problem or share an idea" button at the bottom of `/admin/events/:token` and `/p/:token` (not on the home page), shown only when `OPERATOR_EMAIL` is set. `POST /api/admin/events/{adminToken}/feedback` and `POST /api/p/{participantToken}/feedback` take `{kind: bug|feedback|idea, message}` (message trimmed, 1 to 2000 characters) and answer `204`. The message is emailed to `OPERATOR_EMAIL` (English, `Reply-To` = the sender's email on record) with a server-built context block (role, event ID, title, status, sender name, user agent) and never any token. Nothing is stored in the database. Errors: `400` invalid, `429` rate limited, `502` mail failure, `503` feature unavailable.
+
 - **US-7.2 — Docker Deployment & SQLite Persistence on NAS**
   - *As a* NAS user,
   - *I want* to deploy the application via a simple `docker compose up -d` with a `.env` file and a persistent volume mounted on `/data`,
@@ -454,7 +460,7 @@ Every feature and User Story will be covered by automated tests:
 
 4. **Frontend Pinia Stores and Component Unit Tests (`web/src/__tests__/`)**:
    - `stores.spec.ts` runs the real stores against a mocked `fetch` and pins the exact fields sent to the (strictly decoding) API, URL encoding, error messages (including `429`) and resilience to non-JSON proxy error pages; `views.spec.ts` and `event-admin.spec.ts` drive the views through the real stores (error paths, double-submit protection, XSS-safe rendering, `http(s)`-only links, directional exclusion form).
-   - Tests using **Vitest**, **@pinia/testing**, and **@vue/test-utils** covering Pinia stores and main views, FR/EN language switching, absence of the target's name and wishlist from the DOM before clicking "Discover" (`POST /reveal`), and wishlist management.
+   - Tests using **Vitest**, **@pinia/testing**, and **@vue/test-utils** covering Pinia stores and main views, FR/EN language switching, absence of the target's name and wishlist from the DOM before clicking "Discover" (`POST /reveal`), and wishlist management. `feedback.spec.ts` covers the feedback dialog (validation, busy state, success, translated `429`/`502`/`503`/`400` errors, scope and token used) and the trigger being hidden without `OPERATOR_EMAIL`.
 
 ---
 

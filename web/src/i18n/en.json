@@ -166,6 +166,8 @@
     "rights": "You can ask {email} for access, correction or deletion of your data. If you believe your rights are not respected, you can lodge a complaint with the CNIL (www.cnil.fr).",
     "access_title": "Technical access",
     "access": "The operator can technically read the database, including the draw, but does not look at it. The organizer can also see and change participant email addresses, which is how a lost link is resent.",
+    "feedback_title": "Problem reports",
+    "feedback": "Reporting a problem or an idea sends your message, name, email and event details to the operator by email. It is not stored in the app database.",
     "footer_link": "Privacy"
   },
   "errors": {
@@ -200,6 +202,23 @@
     "invalid_body": "Invalid request.",
     "rate_limited": "Too many requests, please try again later.",
     "server": "Server error, please try again in a moment.",
-    "generic": "Something went wrong, please try again."
+    "generic": "Something went wrong, please try again.",
+    "invalid_feedback": "Your message must be between 1 and 2000 characters.",
+    "feedback_rate_limited": "Too many feedback reports, please try again later.",
+    "feedback_send_failed": "Your message could not be sent, please try again.",
+    "feedback_unavailable": "Feedback is not available on this site."
+  },
+  "feedback": {
+    "open_btn": "Report a problem or share an idea",
+    "title": "Report a problem or share an idea",
+    "kind_label": "Type",
+    "kind_bug": "Bug",
+    "kind_feedback": "Feedback",
+    "kind_idea": "Idea",
+    "message_label": "Your message",
+    "reply_note": "We will reply to the email address on record for you in this event.",
+    "cancel_btn": "Cancel",
+    "send_btn": "Send",
+    "success": "Thank you, your message has been sent."
   }
 }

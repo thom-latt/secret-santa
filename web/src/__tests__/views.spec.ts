@@ -626,6 +626,17 @@ describe('Accessibility and UX blockers', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('Invalid email address.')
   })
 
+  it('shows the feedback trigger only when the operator email is configured', async () => {
+    const space = { first_name: 'Alice', last_name: 'M', email: 'a@example.com', event_title: 'X', event_date: '', budget: '', description: '', locale: 'en', revealed: false, link_clicked_at: null, own_wishlist: [] }
+    on('GET', '/api/p/tok', () => json(space))
+    on('GET', '/api/public/config', () => json({ operator_email: '' }))
+    const without = await mountAt(ParticipantView, '/p/tok')
+    expect(without.wrapper.find('[data-testid="feedback-open-btn"]').exists()).toBe(false)
+    on('GET', '/api/public/config', () => json({ operator_email: 'op@example.com' }))
+    const withEmail = await mountAt(ParticipantView, '/p/tok')
+    expect(withEmail.wrapper.find('[data-testid="feedback-open-btn"]').exists()).toBe(true)
+  })
+
   it('offers "Resend my links" on a 404 and shows a loading state on the participant page', async () => {
     on('GET', '/api/p/gone', () => json({ error: 'participant not found' }, 404))
     const { wrapper } = await mountAt(ParticipantView, '/p/gone')

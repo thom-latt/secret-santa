@@ -92,6 +92,7 @@ beforeEach(() => {
       const override = overrides.get(key)
       if (override) return override()
 
+      if (key === 'GET /api/public/config') return json({ allow_public_event_creation: false, operator_name: 'Op', operator_email: 'op@example.com' })
       if (key === 'GET /api/admin/events/tok') return json(eventPayload())
       if (key === 'PUT /api/admin/events/tok') return json(eventPayload())
       if (key === 'POST /api/admin/events/tok/exclusions') {
@@ -374,9 +375,9 @@ describe('EventAdminView - accessibility and UX', () => {
   it('uses a unique title id per modal', async () => {
     const w = await mountAdmin()
     const dialogs = w.findAll('dialog')
-    expect(dialogs).toHaveLength(2)
+    expect(dialogs).toHaveLength(3) // draw, delete, feedback
     const ids = dialogs.map((d) => d.attributes('aria-labelledby'))
-    expect(new Set(ids).size).toBe(2)
+    expect(new Set(ids).size).toBe(3)
     dialogs.forEach((d, i) => expect(d.find(`#${ids[i]}`).exists()).toBe(true))
   })
 

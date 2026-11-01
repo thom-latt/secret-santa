@@ -166,6 +166,8 @@
     "rights": "Vous pouvez demander à {email} l'accès, la rectification ou la suppression de vos données. Si vous estimez que vos droits ne sont pas respectés, vous pouvez déposer une réclamation auprès de la CNIL (www.cnil.fr).",
     "access_title": "Accès technique",
     "access": "L'exploitant peut techniquement lire la base de données, y compris le tirage, mais ne la consulte pas. L'organisateur peut aussi voir et modifier les adresses email des participants, c'est ainsi qu'un lien perdu est renvoyé.",
+    "feedback_title": "Signalements",
+    "feedback": "Signaler un problème ou une idée envoie votre message, votre nom, votre email et les détails de l'événement à l'exploitant par email. Rien n'est conservé dans la base de données de l'application.",
     "footer_link": "Confidentialité"
   },
   "errors": {
@@ -200,6 +202,23 @@
     "invalid_body": "Requête invalide.",
     "rate_limited": "Trop de requêtes, veuillez réessayer plus tard.",
     "server": "Erreur du serveur, veuillez réessayer dans un instant.",
-    "generic": "Une erreur est survenue, veuillez réessayer."
+    "generic": "Une erreur est survenue, veuillez réessayer.",
+    "invalid_feedback": "Votre message doit contenir entre 1 et 2000 caractères.",
+    "feedback_rate_limited": "Trop de signalements, veuillez réessayer plus tard.",
+    "feedback_send_failed": "Votre message n'a pas pu être envoyé, veuillez réessayer.",
+    "feedback_unavailable": "Les retours ne sont pas disponibles sur ce site."
+  },
+  "feedback": {
+    "open_btn": "Signaler un problème ou proposer une idée",
+    "title": "Signaler un problème ou proposer une idée",
+    "kind_label": "Type",
+    "kind_bug": "Bug",
+    "kind_feedback": "Remarque",
+    "kind_idea": "Idée",
+    "message_label": "Votre message",
+    "reply_note": "Nous répondrons à l'adresse email enregistrée pour vous dans cet événement.",
+    "cancel_btn": "Annuler",
+    "send_btn": "Envoyer",
+    "success": "Merci, votre message a été envoyé."
   }
 }

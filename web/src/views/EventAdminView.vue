@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useEventAdminStore, type AdminParticipant } from '../stores/eventAdmin'
 import DialogModal from '../components/DialogModal.vue'
 import ErrorView from './ErrorView.vue'
+import FeedbackDialog from '../components/FeedbackDialog.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -837,5 +838,6 @@ async function confirmAndDeleteEvent() {
       </DialogModal>
     </template>
     <p v-else role="status" class="text-center text-sm text-slate-600">{{ t('common.loading') }}</p>
+    <FeedbackDialog v-if="store.event" scope="admin" :token="adminToken" />
   </div>
 </template>

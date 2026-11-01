@@ -46,7 +46,7 @@ Privacy-first, passwordless, bilingual (French / English) Secret Santa web appli
 | `SMTP_USER` | — | SMTP username (optional if using an unauthenticated local relay) |
 | `SMTP_PASS` | — | SMTP password |
 | `OPERATOR_NAME` | — | Name of the person running the instance (data controller). Required in production, shown on `/privacy` |
-| `OPERATOR_EMAIL` | — | Contact address shown on `/privacy`. Required in production, must be a valid email |
+| `OPERATOR_EMAIL` | — | Contact address shown on `/privacy`; also receives the problem reports and ideas users send from their event pages. Required in production, must be a valid email |
 | `SMTP_FROM` | `Secret Santa <noreply@example.com>` | `From` header and envelope sender address |
 | `SMTP_TLS_MODE` | `starttls` | `starttls` (port 587), `tls` (implicit TLS, port 465), or `none` (port 25 / local relay) |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy that sets `X-Forwarded-For` (the Nginx config below does): rate limiting then uses the right-most entry instead of the proxy's address. Leave `false` if the app is directly exposed (the header is client-controlled) |
@@ -101,7 +101,7 @@ Draw emails are only useful if they reach the inbox. Before going live:
 - **App passwords**: with Gmail and similar providers, use an app password as `SMTP_PASS`, not the account password.
 - **Test**: use *Send test email* in `/superadmin`, then score a message with [mail-tester.com](https://www.mail-tester.com) (use that address as an invitation target).
 
-Mail the app sends is rate limited: each participant can be sent a link at most 3 times per hour, and the "resend failed" action is limited to 5 calls per event per hour.
+Mail the app sends is rate limited: each participant can be sent a link at most 3 times per hour, and the "resend failed" action is limited to 5 calls per event per hour. Feedback reports are limited to 10 per client and 20 per event per hour.
 
 ---
 

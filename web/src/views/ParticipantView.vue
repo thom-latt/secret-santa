@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useParticipantStore, type WishlistItem } from '../stores/participant'
 import ErrorView from './ErrorView.vue'
+import FeedbackDialog from '../components/FeedbackDialog.vue'
 import { safeHref } from '../utils/safeUrl'
 
 const { t } = useI18n()
@@ -350,5 +351,6 @@ async function handleDeleteItem(itemId: string) {
       </section>
     </template>
     <p v-else role="status" class="text-center text-sm text-slate-600">{{ t('common.loading') }}</p>
+    <FeedbackDialog v-if="store.data" scope="participant" :token="token" />
   </div>
 </template>
