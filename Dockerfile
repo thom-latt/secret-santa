@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /app/secret-santa ./cmd
 FROM alpine:3.24
 RUN apk --no-cache upgrade && \
     apk --no-cache add ca-certificates tzdata su-exec && \
-    addgroup -S santa && adduser -S -G santa santa && \
+    addgroup -S santa && adduser -S -u 10001 -G santa santa && \
     mkdir -p /data && chown -h santa:santa /data && chmod 700 /data
 WORKDIR /app
 COPY --from=go-builder /app/secret-santa /app/secret-santa
@@ -33,4 +33,4 @@ ENV APP_ENV=production \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -qO- http://127.0.0.1:${PORT:-8080}/api/health || exit 1
 # nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
-ENTRYPOINT ["sh", "-c", "if [ \"$(id -u)\" = '0' ]; then mkdir -p /data && chown -h santa:santa /data && chmod 700 /data && exec su-exec santa /app/secret-santa; else exec /app/secret-santa; fi"]
+ENTRYPOINT ["sh", "-c", "if [ \"$(id -u)\" = '0' ]; then mkdir -p /data && chown -R santa:santa /data && chmod 700 /data && exec su-exec santa /app/secret-santa; else exec /app/secret-santa; fi"]

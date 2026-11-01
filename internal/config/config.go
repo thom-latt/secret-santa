@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -60,6 +61,13 @@ func Load() (*Config, error) {
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
 		return nil, fmt.Errorf("invalid APP_BASE_URL %q: must be an absolute http(s) URL", baseURL)
+	}
+
+	if appEnv == "development" && !isLoopbackHost(parsedURL.Hostname()) {
+		return nil, fmt.Errorf("development mode (default admin password, mock mail) is only allowed for localhost, got APP_BASE_URL host %q: set APP_ENV=production", parsedURL.Hostname())
+	}
+	if appEnv == "production" && parsedURL.Scheme != "https" {
+		return nil, errors.New("APP_BASE_URL must use https in production")
 	}
 
 	dbPath := strings.TrimSpace(getEnv("DB_PATH", "./data/secret-santa.db"))
@@ -121,6 +129,12 @@ func Load() (*Config, error) {
 		}
 		if len(cfg.SessionSecret) < 32 || cfg.SessionSecret == "change-me-32-bytes-minimum-secret-key" {
 			return nil, errors.New("SESSION_SECRET must be changed and at least 32 characters in production")
+		}
+		if strings.EqualFold(cfg.SuperAdminEmail, "admin@example.com") {
+			return nil, errors.New("SUPER_ADMIN_EMAIL must be changed from the admin@example.com default in production")
+		}
+		if from, err := mail.ParseAddress(cfg.SMTPFrom); err != nil || strings.EqualFold(from.Address, "noreply@example.com") {
+			return nil, errors.New("SMTP_FROM must be a valid address other than the noreply@example.com default in production")
 		}
 		if cfg.SMTPHost == "" {
 			return nil, errors.New("SMTP_HOST is required in production")
@@ -219,6 +233,10 @@ func SetEnvPasswordHash(path, hash string) error {
 
 func (c *Config) IsSecureCookie() bool {
 	return c.AppEnv == "production" || strings.HasPrefix(strings.ToLower(c.AppBaseURL), "https://")
+}
+
+func isLoopbackHost(h string) bool {
+	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 
 func parseBoolEnv(key string, fallback bool) (bool, error) {

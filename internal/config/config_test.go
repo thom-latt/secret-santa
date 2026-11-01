@@ -51,6 +51,8 @@ func prodEnv(t *testing.T) {
 	t.Setenv("SUPER_ADMIN_PASSWORD_HASH", strongHash(t))
 	t.Setenv("SESSION_SECRET", strings.Repeat("s", 40))
 	t.Setenv("SMTP_HOST", "smtp.example.com")
+	t.Setenv("SUPER_ADMIN_EMAIL", "owner@santa.example.org")
+	t.Setenv("SMTP_FROM", "Secret Santa <santa@santa.example.org>")
 }
 
 func TestLoadDevelopmentDefaults(t *testing.T) {
@@ -70,6 +72,16 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 	}
 	if cfg.IsSecureCookie() {
 		t.Fatal("http development must not use Secure cookies")
+	}
+}
+
+func TestLoadDevelopmentAllowsLoopbackHosts(t *testing.T) {
+	for _, u := range []string{"http://localhost:3000", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+		cleanEnv(t)
+		t.Setenv("APP_BASE_URL", u)
+		if _, err := Load(); err != nil {
+			t.Fatalf("%s: %v", u, err)
+		}
 	}
 }
 
@@ -122,6 +134,11 @@ func TestLoadRejectsInvalidConfigurations(t *testing.T) {
 		{"smtp port zero", false, map[string]string{"SMTP_PORT": "0"}, "invalid SMTP_PORT"},
 		{"smtp port negative", false, map[string]string{"SMTP_PORT": "-5"}, "invalid SMTP_PORT"},
 		{"bad tls mode", false, map[string]string{"SMTP_TLS_MODE": "ssl"}, "invalid SMTP_TLS_MODE"},
+		{"dev on public host", false, map[string]string{"APP_BASE_URL": "http://santa.example.com"}, "development mode"},
+		{"prod http base url", true, map[string]string{"APP_BASE_URL": "http://santa.example.com"}, "must use https"},
+		{"prod default admin email", true, map[string]string{"SUPER_ADMIN_EMAIL": "admin@example.com"}, "SUPER_ADMIN_EMAIL"},
+		{"prod default smtp from", true, map[string]string{"SMTP_FROM": "Secret Santa <noreply@example.com>"}, "SMTP_FROM"},
+		{"prod unparsable smtp from", true, map[string]string{"SMTP_FROM": "not an address"}, "SMTP_FROM"},
 		{"bad TRUST_PROXY", false, map[string]string{"TRUST_PROXY": "maybe"}, "invalid TRUST_PROXY"},
 	}
 	for _, tc := range cases {

@@ -18,10 +18,25 @@ services:
     env_file:
       - .env
     environment:
-      - APP_ENV=${APP_ENV:-production}
+      # Literal on purpose: .env must never switch compose to development mode
+      - APP_ENV=production
       - DB_PATH=/data/secret-santa.db
+    # Let in-flight draw emails finish (app shutdown budget is 100s)
+    stop_grace_period: 2m
+    read_only: true
+    tmpfs:
+      - /tmp
     security_opt:
       - no-new-privileges:true
+    # CHOWN/SETUID/SETGID are needed by the su-exec entrypoint
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    mem_limit: 256m
+    pids_limit: 100
     # Mount persistent NAS folder to /data so SQLite DB + WAL survive restarts/updates
     volumes:
       - ./data:/data
