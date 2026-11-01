@@ -27,9 +27,9 @@ func NewMailer(cfg *config.Config) Mailer {
 }
 
 type AdminMagicLinkData struct {
-	OrganizerName string
-	EventTitle    string
-	AdminToken    string
+	OrganizerName  string
+	EventTitle     string
+	AdminToken     string
 	InvitedByAdmin bool
 }
 

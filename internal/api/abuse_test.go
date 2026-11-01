@@ -91,4 +91,3 @@ func TestSecurityHeadersKeepPagesOutOfSearchEngines(t *testing.T) {
 		t.Fatalf("CSP lacks object-src 'none': %s", csp)
 	}
 }
-

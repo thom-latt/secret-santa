@@ -263,4 +263,3 @@ func TestSMTPMailerPooledBatchAndPartialFailure(t *testing.T) {
 		t.Fatalf("expected 2 delivered messages, got %d", deliveredCount.Load())
 	}
 }
-

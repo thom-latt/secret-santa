@@ -49,7 +49,7 @@ type ExclusionDTO struct {
 }
 
 type FeasibilityDTO struct {
-	Mode       string `json:"mode"`       // "single_cycle" | "sub_loops" | "impossible" | "too_few"
+	Mode       string `json:"mode"` // "single_cycle" | "sub_loops" | "impossible" | "too_few"
 	Diagnostic string `json:"diagnostic"`
 }
 
@@ -113,18 +113,18 @@ type TargetDTO struct {
 
 // ParticipantSelfDTO exposes Target ONLY when LinkClickedAt != nil.
 type ParticipantSelfDTO struct {
-	FirstName       string            `json:"first_name"`
-	LastName        string            `json:"last_name"`
-	Email           string            `json:"email"`
-	EventTitle      string            `json:"event_title"`
-	EventDate       string            `json:"event_date"`
-	Budget          string            `json:"budget"`
-	Description     string            `json:"description"`
-	Locale          string            `json:"locale"`
-	Revealed        bool              `json:"revealed"`
-	LinkClickedAt   *time.Time        `json:"link_clicked_at"`
-	Target          *TargetDTO        `json:"target,omitempty"`
-	OwnWishlist     []WishlistItemDTO `json:"own_wishlist"`
+	FirstName     string            `json:"first_name"`
+	LastName      string            `json:"last_name"`
+	Email         string            `json:"email"`
+	EventTitle    string            `json:"event_title"`
+	EventDate     string            `json:"event_date"`
+	Budget        string            `json:"budget"`
+	Description   string            `json:"description"`
+	Locale        string            `json:"locale"`
+	Revealed      bool              `json:"revealed"`
+	LinkClickedAt *time.Time        `json:"link_clicked_at"`
+	Target        *TargetDTO        `json:"target,omitempty"`
+	OwnWishlist   []WishlistItemDTO `json:"own_wishlist"`
 }
 
 type UpsertWishlistItemRequest struct {

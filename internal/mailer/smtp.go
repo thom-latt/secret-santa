@@ -52,12 +52,12 @@ func NewSMTPMailer(cfg *config.Config) *SMTPMailer {
 	}
 	return &SMTPMailer{
 		helloHost: helloHost,
-		host:    cfg.SMTPHost,
-		port:    cfg.SMTPPort,
-		user:    cfg.SMTPUser,
-		pass:    cfg.SMTPPass,
-		from:    cfg.SMTPFrom,
-		tlsMode: cfg.SMTPTLSMode,
+		host:      cfg.SMTPHost,
+		port:      cfg.SMTPPort,
+		user:      cfg.SMTPUser,
+		pass:      cfg.SMTPPass,
+		from:      cfg.SMTPFrom,
+		tlsMode:   cfg.SMTPTLSMode,
 	}
 }
 

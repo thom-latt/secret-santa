@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	ErrTooFewParticipants = errors.New("at least 3 participants are required")
+	ErrTooFewParticipants  = errors.New("at least 3 participants are required")
 	ErrTooManyParticipants = errors.New("at most 100 participants are supported")
-	ErrNoValidDraw        = errors.New("no valid draw possible with current exclusions")
+	ErrNoValidDraw         = errors.New("no valid draw possible with current exclusions")
 )
 
 type Mode string
