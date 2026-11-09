@@ -2,7 +2,7 @@ module secret-santa
 
 go 1.27.3
 
-require modernc.org/sqlite v1.61.0
+require modernc.org/sqlite v1.61.1
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
